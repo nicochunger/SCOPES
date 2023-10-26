@@ -1,8 +1,8 @@
 """ Definition of all the generic merit functions """
 
-import astropy.units as u
+# import astropy.units as u
 import numpy as np
-from astropy.time import Time, TimeDelta
+from astropy.time import TimeDelta
 
 import config
 from class_definitions import Observation
@@ -12,7 +12,7 @@ def at_night(observation: Observation, which: str) -> float:
     """Merit function that returns 1 if the observation is at night, 0 otherwise"""
     valid_options = ["civil", "nautical", "astronomical"]
     start_time = observation.start_time
-    end_time = observation.start_time + observation.exposure_time
+    end_time = start_time + observation.exposure_time
     if which == "civil":
         return (start_time > observation.night.civil_evening) and (
             end_time < observation.night.civil_morning
@@ -39,33 +39,30 @@ def airmass(
     # TODO Implement the hyperbolic tangent function so that there is some leeway in the airmass
     """
     # Claculate airmass throughout the exposure of the observation
-    airmasses = observation.coords_altaz.secz
+    max_airmass = observation.obs_airmasses.max()
 
     if verbose:
-        print(f"Airmasses: {airmasses}")
-        print(f"Max airmass: {airmasses.max()}")
+        print(f"Max airmass: {max_airmass}")
     # Evaluate maximum airmass of the observation and check if it is below the maximum and return 0.
     # Otherwise return the merit: (1/secz(max)**alpha)
-    if airmasses.max() > max:
+    if max_airmass > max:
         if verbose:
             print("Airmass higher than maximum, return 0.")
         return 0.0
     else:
         if verbose:
             print("Airmass within limits, return merit.")
-        return 1 / airmasses.max() ** alpha
+        return 1 / max_airmass**alpha
 
 
 def altitude(
     observation: Observation,
     min: float = config.scheduling_defaults["telescope elevation limits"][0],  # type: ignore
     max: float = config.scheduling_defaults["telescope elevation limits"][1],  # type: ignore
-) -> float:  
+) -> float:
     """Altitude constraint merit function"""
     # Claculate altitude throughout the exposure of the observation
-    range_altitudes = observation.coords_altaz.alt.deg
-
-    if range_altitudes.min() < min or range_altitudes.max() > max:
+    if observation.obs_altitudes.min() < min or observation.obs_altitudes.max() > max:
         return 0.0
     else:
         return 1.0
@@ -76,7 +73,7 @@ def culmination(observation: Observation, verbose: bool = False) -> float:
     This merit calculates the current height of the target and the proportion to the maximum height
      it will reach during the current night."""
     # Calculate the current altitude of the target
-    current_altitude = observation.coords_altaz.alt.deg[0]
+    current_altitude = observation.obs_altitudes[0]
     # Calculate altitude proportional to available altitue range
     altitude_prop = (current_altitude - observation.min_altitude) / (
         observation.max_altitude - observation.min_altitude
@@ -112,7 +109,11 @@ def egress(observation: Observation, verbose: bool = False) -> float:
 
 
 def cadence(
-    observation: Observation, delay: TimeDelta, alpha: float, beta: float = 0.5
+    observation: Observation,
+    delay: TimeDelta,
+    alpha: float,
+    beta: float = 0.5,
+    verbose: bool = False,
 ) -> float:
     """
     Calcualtes the merit for the desired cadence of observations.
@@ -140,9 +141,16 @@ def cadence(
     Returns:
         score (float): The score of this merit
     """
-    pct_overdue = (observation.start_time - (observation.target.last_obs + delay)).to(
-        u.day
-    ).value / delay.to(u.day).value
+    if verbose:
+        print(f"{observation.start_time = }")
+        print(f"{observation.target.last_obs = }")
+        print(f"{delay.value = }")
+    pct_overdue = (
+        observation.start_time - (observation.target.last_obs + delay.value)
+    ) / delay.value
+    if verbose:
+        print(f"{pct_overdue = }")
+        print(type(pct_overdue))
     if pct_overdue <= 0:
         # Target has not reacehd the desired cadence yet
         # Use hyperbolic tangent to gradually increase merit as it approaches the set cadence
@@ -153,18 +161,19 @@ def cadence(
         return 0.5 + (pct_overdue / (50 * alpha)) ** beta
 
 
-def moon_distance(observation: Observation, min: float = 30.0) -> float:
-    """Moon distance constraint merit function"""
-    # Create the AltAz frame for the moon
-    moon_altaz_frame = observation.observer.moon_altaz(time=observation.time_array)
-    # Claculate moon distance throughout the exposure of the observation
-    range_moon_distance = observation.target.coords.separation(moon_altaz_frame).deg
+# def moon_distance(observation: Observation, min: float = 30.0) -> float:
+#     """Moon distance constraint merit function"""
+# Create the AltAz frame for the moon
+# TODO put this in the Night init. Only has to be done once
+# moon_altaz_frame = observation.observer.moon_altaz(time=observation.time_array)
+# Claculate moon distance throughout the exposure of the observation
+# range_moon_distance = observation.target.coords.separation(moon_altaz_frame).deg
 
-    # TODO: Implement a merit that takes into account the moon illumination
-    if range_moon_distance.min() < min:
-        return 0.0
-    else:
-        return 1.0
+# TODO: Implement a merit that takes into account the moon illumination
+# if range_moon_distance.min() < min:
+#     return 0.0
+# else:
+#     return 1.0
 
 
 # def moon_radial_velocity(observation: Observation, max: float = 100.0) -> float:

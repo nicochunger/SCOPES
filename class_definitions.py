@@ -24,39 +24,37 @@ class Night:
         self.night_date = night_date
         self.observer = observer
         self.midnight = Time(
-            datetime.combine(self.night_date, datetime.min.time())
-            + timedelta(days=1, hours=4)
+            datetime.combine(self.night_date, datetime.min.time()) + timedelta(days=1, hours=4)
         )
         self.sunset = self.observer.sun_set_time(self.midnight, which="previous")
         self.sunrise = lasilla.sun_rise_time(self.midnight, which="next")
 
         # Get the times for the different twilights
-        self.civil_evening = lasilla.twilight_evening_civil(
-            self.midnight, which="previous"
-        )
-        self.nautical_evening = lasilla.twilight_evening_nautical(
-            self.midnight, which="previous"
-        )
+        self.civil_evening = lasilla.twilight_evening_civil(self.midnight, which="previous")
+        self.nautical_evening = lasilla.twilight_evening_nautical(self.midnight, which="previous")
         self.astronomical_evening = lasilla.twilight_evening_astronomical(
             self.midnight, which="previous"
         )
         # And the same for the morning
         self.civil_morning = lasilla.twilight_morning_civil(self.midnight, which="next")
-        self.nautical_morning = lasilla.twilight_morning_nautical(
-            self.midnight, which="next"
-        )
+        self.nautical_morning = lasilla.twilight_morning_nautical(self.midnight, which="next")
         self.astronomical_morning = lasilla.twilight_morning_astronomical(
             self.midnight, which="next"
         )
         # Time ranges for the different twilights
         self.time_range_night = np.linspace(self.sunset, self.sunrise, 300)
         self.time_range_civil = np.linspace(self.civil_evening, self.civil_morning, 300)
-        self.time_range_nautical = np.linspace(
-            self.nautical_evening, self.nautical_morning, 300
-        )
+        self.time_range_nautical = np.linspace(self.nautical_evening, self.nautical_morning, 300)
         self.time_range_astronomical = np.linspace(
             self.astronomical_evening, self.astronomical_morning, 300
         )
+        # Now only use the jd value of the twilights
+        self.civil_evening = self.civil_evening.jd
+        self.nautical_evening = self.nautical_evening.jd
+        self.astronomical_evening = self.astronomical_evening.jd
+        self.civil_morning = self.civil_morning.jd
+        self.nautical_morning = self.nautical_morning.jd
+        self.astronomical_morning = self.astronomical_morning.jd
 
 
 class Program:
@@ -109,9 +107,7 @@ class Merit:
         assert (
             required_func_parameters[0] == "observation"
         ), "The first parameter has to be 'observation'"
-        assert set(required_func_parameters[1:]).issubset(
-            set(self.parameters.keys())
-        ), (
+        assert set(required_func_parameters[1:]).issubset(set(self.parameters.keys())), (
             f"The given parameters ({set(self.parameters.keys())}) don't match the "
             "required parameters of the given function "
             f"({set(required_func_parameters[1:])})"
@@ -137,7 +133,7 @@ class Target:
         self.name = name
         self.program = prog
         self.coords = coords
-        self.last_obs = last_obs
+        self.last_obs = last_obs.jd
         self.merits: List[Merit] = []  # List of all merits
 
     def add_merit(self, merit: Merit):
@@ -168,17 +164,14 @@ class Observation:
         observer: Observer = lasilla,
     ):
         self.target = target
-        self.start_time = start_time
-        self.exposure_time = exposure_time
+        self.start_time = start_time.jd
+        self.exposure_time = exposure_time.value
         self.night = night
         self.observer = observer  # Observer location
         self.score: float = 0.0  # Initialize score to zero
         self.veto_merits: List[float] = []  # List to store veto merits
-        self.time_array: Time = None
+        # self.time_array: Time = None
         self.unique_id = uuid.uuid4()
-
-        # Initizalize the time array with the start time
-        self.update_time_array()
 
         # Calculate the minimum and maximum altitude of the target during the night of the observation
         # Create the AltAz frame for the observation during the night
@@ -197,18 +190,21 @@ class Observation:
 
         # Get the time range for the night
         if twilight == "civil":
-            time_range = self.night.time_range_civil
+            self.night_time_range = self.night.time_range_civil
         elif twilight == "nautical":
-            time_range = self.night.time_range_nautical
+            self.night_time_range = self.night.time_range_nautical
         elif twilight == "astronomical":
-            time_range = self.night.time_range_astronomical
+            self.night_time_range = self.night.time_range_astronomical
 
         # Create the AltAz frame for the observation during the night
-        self.night_altaz_frame = self.observer.altaz(time=time_range)
-        # Get the altitude of the target during the night
-        self.night_altitudes = self.target.coords.transform_to(
-            self.night_altaz_frame
-        ).alt.deg
+        self.night_altaz_frame = self.target.coords.transform_to(
+            self.observer.altaz(time=self.night_time_range)
+        )
+        # Get the altitudes and airmasses of the target during the night
+        self.night_altitudes = self.night_altaz_frame.alt.deg
+        self.night_airmasses = self.night_altaz_frame.secz
+        # Update the altitudes and airmasses for the observation timerange
+        self.update_alt_airmass()
         # Get the minimum altitude of the target during the night
         # TODO Think about where the global default setting would live. Thinks like the observer,
         # Telescope pointing limits, etc. These things should be set modifiable by the user, but
@@ -225,56 +221,54 @@ class Observation:
         # rise until the end of the night
         # First find which is the nearest to current time (rise of set)
 
-        neaest_rise_time = observer.target_rise_time(
-            self.start_time,
+        nearest_rise_time = observer.target_rise_time(
+            start_time,
             self.target.coords,
             horizon=tel_alt_lower_lim * u.deg,
             which="nearest",
-        )
+        ).jd
         nearest_set_time = observer.target_set_time(
-            self.start_time,
+            start_time,
             self.target.coords,
             horizon=tel_alt_lower_lim * u.deg,
             which="nearest",
-        )
+        ).jd
         # Calculate timedelta between the start time and the nearest rise and set times
-        rise_timedelta = abs(neaest_rise_time - self.start_time)
+        rise_timedelta = abs(nearest_rise_time - self.start_time)
         set_timedelta = abs(nearest_set_time - self.start_time)
         if rise_timedelta < set_timedelta:
             # If the rise time is closer than the set time, then the target is rising
-            self.rise_time = neaest_rise_time
+            self.rise_time = nearest_rise_time
             self.set_time = observer.target_set_time(
-                self.start_time,
+                start_time,
                 self.target.coords,
                 horizon=tel_alt_lower_lim * u.deg,
                 which="next",
-            )
+            ).jd
         elif set_timedelta < rise_timedelta:
             # If the set time is closer than the rise time, then the target already set
             self.rise_time = observer.target_rise_time(
-                self.start_time,
+                start_time,
                 self.target.coords,
                 horizon=tel_alt_lower_lim * u.deg,
                 which="previous",
-            )
-            self.set_time = neaest_rise_time
+            ).jd
+            self.set_time = nearest_rise_time
 
-    def update_time_array(self):
-        # Create time range for the observation
-        self.time_array = np.linspace(
-            self.start_time, (self.start_time + self.exposure_time), 10
+    def update_alt_airmass(self):
+        # Find indices
+        night_range_jd = self.night_time_range.value
+        start_idx = np.searchsorted(night_range_jd, self.start_time, side="left")
+        end_idx = np.searchsorted(
+            night_range_jd, self.start_time + self.exposure_time, side="right"
         )
-        self.observation_altaz_frame = self.observer.altaz(time=self.time_array)
-        self.coords_altaz = self.target.coords.transform_to(
-            self.observation_altaz_frame
-        )
+        self.obs_altitudes = self.night_altitudes[start_idx:end_idx]
+        self.obs_airmasses = self.night_airmasses[start_idx:end_idx]
 
     def update_veto_merits(self):
         # Update all veto merits (dummy values for now)
         self.veto_merits = [
-            merit.evaluate(self)
-            for merit in self.target.merits
-            if merit.merit_type == "veto"
+            merit.evaluate(self) for merit in self.target.merits if merit.merit_type == "veto"
         ]
 
     def feasible(self) -> float:
@@ -289,7 +283,7 @@ class Observation:
         # TODO Implement the overheads of slew time from previous observation and instrument configuration
         self.start_time = previous_obs.start_time + previous_obs.exposure_time
         # Update the time array becaue the start time changed
-        self.update_time_array()
+        self.update_alt_airmass()
         # Calculate new rank score based on new start time
         self.evaluate_score()
 
@@ -350,8 +344,8 @@ class Observation:
 
 class Plan:
     def __init__(self):
-        self.observations: List[Observation] = []
-        self.score: float = 0.0
+        self.observations = []
+        self.score = 0.0
         # TODO: rethink what the best type class for the observation_night should be
         # If a simple Time object with the time and date of the sunset
         # Or just a date, or julian date, or something else
@@ -373,29 +367,17 @@ class Plan:
         first_obs = self.observations[0]
 
         # Get sunset and sunrise times for this night
-        sunset = first_obs.observer.sun_set_time(first_obs.start_time, which="previous")
-        sunrise = first_obs.observer.sun_rise_time(first_obs.start_time, which="next")
+        night = first_obs.night
+        sunset = Time(night.sunset, format='jd')
+        sunrise = Time(night.sunrise, format='jd')
 
         # Get the times for the different twilights
-        civil_evening = lasilla.twilight_evening_civil(
-            first_obs.start_time, which="previous"
-        )
-        nautical_evening = lasilla.twilight_evening_nautical(
-            first_obs.start_time, which="previous"
-        )
-        astronomical_evening = lasilla.twilight_evening_astronomical(
-            first_obs.start_time, which="previous"
-        )
-        # And the same for the morning
-        civil_morning = lasilla.twilight_morning_civil(
-            first_obs.start_time, which="next"
-        )
-        nautical_morning = lasilla.twilight_morning_nautical(
-            first_obs.start_time, which="next"
-        )
-        astronomical_morning = lasilla.twilight_morning_astronomical(
-            first_obs.start_time, which="next"
-        )
+        civil_evening = Time(night.civil_evening, format='jd').datetime
+        nautical_evening = Time(night.nautical_evening, format='jd').datetime
+        astronomical_evening = Time(night.astronomical_evening, format='jd').datetime
+        civil_morning = Time(night.civil_morning, format='jd').datetime
+        nautical_morning = Time(night.nautical_morning, format='jd').datetime
+        astronomical_morning = Time(night.astronomical_morning, format='jd').datetime
 
         # Get which programs are part of this plan
         programs = list(
@@ -410,12 +392,10 @@ class Plan:
         plt.figure(figsize=(13, 5))
 
         for obs in self.observations:
-            time_range = np.linspace(
+            time_range = Time(np.linspace(
                 obs.start_time, (obs.start_time + obs.exposure_time), 20
-            ).datetime
-            altitudes = obs.target.coords.transform_to(
-                lasilla.altaz(time=time_range)
-            ).alt.deg
+            ), format='jd').datetime
+            altitudes = obs.target.coords.transform_to(lasilla.altaz(time=time_range)).alt.deg
 
             # Generate an array of equally spaced Julian Dates
             num_points = 300  # The number of points you want
@@ -448,42 +428,14 @@ class Plan:
 
         # Plot shaded areas between sunset and civil, nautical, and astronomical evening
         y_range = np.arange(0, 91)
-        plt.fill_betweenx(
-            y_range, sunset.datetime, civil_evening.datetime, color="yellow", alpha=0.2
-        )
-        plt.fill_betweenx(
-            y_range,
-            civil_evening.datetime,
-            nautical_evening.datetime,
-            color="orange",
-            alpha=0.2,
-        )
-        plt.fill_betweenx(
-            y_range,
-            nautical_evening.datetime,
-            astronomical_evening.datetime,
-            color="red",
-            alpha=0.2,
-        )
+        plt.fill_betweenx(y_range, sunset.datetime, civil_evening, color="yellow", alpha=0.2)
+        plt.fill_betweenx(y_range, civil_evening, nautical_evening, color="orange", alpha=0.2)
+        plt.fill_betweenx(y_range, nautical_evening, astronomical_evening, color="red", alpha=0.2)
         # Same for the morning
-        plt.fill_betweenx(
-            y_range, civil_morning.datetime, sunrise.datetime, color="yellow", alpha=0.2
-        )
-        plt.fill_betweenx(
-            y_range,
-            nautical_morning.datetime,
-            civil_morning.datetime,
-            color="orange",
-            alpha=0.2,
-        )
-        plt.fill_betweenx(
-            y_range,
-            astronomical_morning.datetime,
-            nautical_morning.datetime,
-            color="red",
-            alpha=0.2,
-        )
-        # Add text that have the words "civil", "nautical", and "astronomical". 
+        plt.fill_betweenx(y_range, civil_morning, sunrise.datetime, color="yellow", alpha=0.2)
+        plt.fill_betweenx(y_range, nautical_morning, civil_morning, color="orange", alpha=0.2)
+        plt.fill_betweenx(y_range, astronomical_morning, nautical_morning, color="red", alpha=0.2)
+        # Add text that have the words "civil", "nautical", and "astronomical".
         # These boxes are placed vertically at the times of each of them (both evening and morning)
         text_kwargs = {
             "rotation": 90,
@@ -491,54 +443,36 @@ class Plan:
             "color": "gray",
             "fontsize": 8,
         }
-        
+
+        plt.text(sunset.datetime, 30.5, "Sunset", horizontalalignment="right", **text_kwargs)
+        plt.text(civil_evening, 30.5, "Civil", horizontalalignment="right", **text_kwargs)
+        plt.text(nautical_evening, 30.5, "Nautical", horizontalalignment="right", **text_kwargs)
         plt.text(
-            sunset.datetime, 30.5, "Sunset", horizontalalignment="right", **text_kwargs
+            astronomical_evening, 30.5, "Astronomical", horizontalalignment="right", **text_kwargs
         )
         plt.text(
-            civil_evening.datetime,
-            30.5,
-            "Civil",
-            horizontalalignment="right",
-            **text_kwargs,
-        )
-        plt.text(
-            nautical_evening.datetime,
-            30.5,
-            "Nautical",
-            horizontalalignment="right",
-            **text_kwargs,
-        )
-        plt.text(
-            astronomical_evening.datetime,
-            30.5,
-            "Astronomical",
-            horizontalalignment="right",
-            **text_kwargs,
-        )
-        plt.text(
-            (civil_morning + 3 * u.min).datetime,
+            (civil_morning + timedelta(minutes=3)),
             30.5,
             "Civil",
             horizontalalignment="left",
             **text_kwargs,
         )
         plt.text(
-            (nautical_morning + 3 * u.min).datetime,
+            (nautical_morning + timedelta(minutes=3)),
             30.5,
             "Nautical",
             horizontalalignment="left",
             **text_kwargs,
         )
         plt.text(
-            (astronomical_morning + 3 * u.min).datetime,
+            (astronomical_morning + timedelta(minutes=3)),
             30.5,
             "Astronomical",
             horizontalalignment="left",
             **text_kwargs,
         )
         plt.text(
-            (sunrise + 3 * u.min).datetime,
+            (sunrise.datetime + timedelta(minutes=3)),
             30.5,
             "Sunrise",
             horizontalalignment="left",
@@ -557,9 +491,7 @@ class Plan:
         plt.ylim(30, 90)
         if save:
             plt.tight_layout()
-            plt.savefig(
-                f"night_schedule_{self.observations[0].night.night_date}.png", dpi=300
-            )
+            plt.savefig(f"night_schedule_{self.observations[0].night.night_date}.png", dpi=300)
 
     def __len__(self):
         return len(self.observations)

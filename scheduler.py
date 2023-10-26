@@ -1,13 +1,18 @@
+import pickle
 from copy import deepcopy
 from dataclasses import dataclass, field
 from queue import PriorityQueue
-from typing import Any, Dict, List, Tuple, Union
+from typing import Any, List, Tuple, Union
 
+# from pymoo.algorithms.moo.nsga2 import NSGA2
 import numpy as np
 from astropy.time import Time
 
 from class_definitions import Observation, Plan
 
+
+def pickle_deepcopy(obj):
+    return pickle.loads(pickle.dumps(obj, -1))
 
 def get_observation_night(observation: Observation) -> Time:
     """Return the night of an observation."""
@@ -17,6 +22,7 @@ def get_observation_night(observation: Observation) -> Time:
 
 def update_start_times(observations: List[Observation], previous_obs: Observation):
     """Update the start time of all observations in the list based on the previous observation."""
+    # TODO vectorize this operation as it is the bottleneck of the scheduler
     for obs in observations:
         obs.update_start_time(previous_obs)
 
@@ -28,7 +34,7 @@ def update_start_times(observations: List[Observation], previous_obs: Observatio
 def forwardP(
     start_obs: Union[Observation, Time],
     available_observations: List[Observation],
-    lookahead_distance: int = None,
+    lookahead_distance = None,
 ):
     """Basic scheduler that simply continues a Plan from the starting observation by
     sequentially choosing the highest scoring observation."""
@@ -56,7 +62,7 @@ def forwardP(
     elif isinstance(start_obs, Time):
         for obs in Obs_copy:
             obs.start_time = start_obs
-            obs.update_time_array()
+            obs.update_alt_airmass()
 
     # Add candidate observation to plan K times
     for _ in range(lookahead_distance):
@@ -100,9 +106,9 @@ def forwardP(
 # Dynamic programming scheduler using recursion
 class DPPlanner:
     def __init__(self):
-        self.DP: Dict = {}
-        self.total_counter: int = 0
-        self.saved_state_counter: int = 0
+        self.DP = {}
+        self.total_counter = 0
+        self.saved_state_counter = 0
 
     def dp_recursion(
         self,
@@ -241,16 +247,13 @@ class BeamSearchPlanner:
 
             # Sort Q by score
             Q.sort(reverse=True, key=lambda x: x[0])
-            for _, obs in Q[: K + 5]:
-                new_plan = deepcopy(current_plan).add_observation(
-                    obs
-                )  # Assuming add_observation returns a modified plan
-                new_remaining = deepcopy(remaining_observations)
+            for _, obs in Q[:K+5]:
+                new_plan = pickle_deepcopy(current_plan).add_observation(obs)
+                new_remaining = pickle_deepcopy(remaining_observations)
+                # new_remaining = np.delete(new_remaining, np.where(new_remaining == obs)[0][0])
                 new_remaining.remove(obs)
                 update_start_times(new_remaining, obs)
-                new_score = (
-                    new_plan.evaluate_plan()
-                )  # Assuming evaluate_plan returns a score
+                new_score = new_plan.evaluate_plan()
                 PQ_next.put(self.PrioritizedItem(-new_score, new_plan, new_remaining))
 
             # If PQ_current is empty, move top-K from PQ_next to PQ_current
@@ -269,3 +272,14 @@ class BeamSearchPlanner:
                 PQ_next = PriorityQueue()
 
         return best_plan
+
+
+# Genetic algorithm scheduler
+class GeneticAlgorithm:
+    def __init__(self) -> None:
+        self.total_counter: int = 0
+
+    def nsga2(self, available_observations: List[Observation],
+              max_plan_length: int, population_size: int, generations: int):
+        """ Non-dominated Sorting Genetic Algorithm II (NSGA-II) implementation """
+        return None
