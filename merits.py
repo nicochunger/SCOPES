@@ -8,30 +8,20 @@ import config
 from class_definitions import Observation
 
 
-def at_night(observation: Observation, which: str) -> float:
+def at_night(observation: Observation) -> float:
     """Merit function that returns 1 if the observation is at night, 0 otherwise"""
-    valid_options = ["civil", "nautical", "astronomical"]
     start_time = observation.start_time
     end_time = start_time + observation.exposure_time
-    if which == "civil":
-        return (start_time > observation.night.civil_evening) and (
-            end_time < observation.night.civil_morning
-        )
-    elif which == "nautical":
-        return (start_time > observation.night.nautical_evening) and (
-            end_time < observation.night.nautical_morning
-        )
-    elif which == "astronomical":
-        return (start_time > observation.night.astronomical_evening) and (
-            end_time < observation.night.astronomical_morning
-        )
+    if (
+        start_time >= observation.night.obs_within_limits[0]
+        and end_time <= observation.night.obs_within_limits[1]
+    ):
+        return 1.0
     else:
-        raise ValueError(f"which must be one of {valid_options}")
+        return 0.0
 
 
-def airmass(
-    observation: Observation, max: float, alpha: float = 1.0, verbose: bool = False
-) -> float:
+def airmass(observation: Observation, max: float) -> float:
     """
     Merit function on the airmass of the observation. It uses a hyperbolic tangent function to
     gradually increase the merit as the airmass increases. The specific shape can be set with the
@@ -39,20 +29,11 @@ def airmass(
     # TODO Implement the hyperbolic tangent function so that there is some leeway in the airmass
     """
     # Claculate airmass throughout the exposure of the observation
-    max_airmass = observation.obs_airmasses.max()
-
-    if verbose:
-        print(f"Max airmass: {max_airmass}")
-    # Evaluate maximum airmass of the observation and check if it is below the maximum and return 0.
-    # Otherwise return the merit: (1/secz(max)**alpha)
-    if max_airmass > max:
-        if verbose:
-            print("Airmass higher than maximum, return 0.")
+    if len(observation.obs_airmasses) == 0:
         return 0.0
     else:
-        if verbose:
-            print("Airmass within limits, return merit.")
-        return 1 / max_airmass**alpha
+        max_airmass = observation.obs_airmasses.max()
+        return max_airmass < max
 
 
 def altitude(
@@ -62,10 +43,10 @@ def altitude(
 ) -> float:
     """Altitude constraint merit function"""
     # Claculate altitude throughout the exposure of the observation
-    if observation.obs_altitudes.min() < min or observation.obs_altitudes.max() > max:
+    if len(observation.obs_altitudes) == 0:
         return 0.0
     else:
-        return 1.0
+        return (observation.obs_altitudes.min() > min) and (observation.obs_altitudes.max() < max)
 
 
 def culmination(observation: Observation, verbose: bool = False) -> float:
@@ -97,9 +78,7 @@ def egress(observation: Observation, verbose: bool = False) -> float:
     else:
         # Claculate altitude throughout the exposure of the observation
         range_observable = observation.set_time - observation.rise_time
-        observable_range_prop = (
-            observation.start_time - observation.rise_time
-        ) / range_observable
+        observable_range_prop = (observation.start_time - observation.rise_time) / range_observable
         if verbose:
             print(f"Current time: {observation.start_time}")
             print(f"First time: {observation.rise_time}")
@@ -148,9 +127,6 @@ def cadence(
     pct_overdue = (
         observation.start_time - (observation.target.last_obs + delay.value)
     ) / delay.value
-    if verbose:
-        print(f"{pct_overdue = }")
-        print(type(pct_overdue))
     if pct_overdue <= 0:
         # Target has not reacehd the desired cadence yet
         # Use hyperbolic tangent to gradually increase merit as it approaches the set cadence

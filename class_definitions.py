@@ -18,7 +18,7 @@ lasilla = Observer.at_site("lasilla")
 
 
 class Night:
-    def __init__(self, night_date: date, observer: Observer = lasilla):
+    def __init__(self, night_date: date, observations_within: str, observer: Observer = lasilla):
         # How to calculate which night to take from the input time?
         # For now just take the night of the input time
         self.night_date = night_date
@@ -55,6 +55,21 @@ class Night:
         self.civil_morning = self.civil_morning.jd
         self.nautical_morning = self.nautical_morning.jd
         self.astronomical_morning = self.astronomical_morning.jd
+
+        self.observations_within = observations_within
+        # Check if the observations_within is valid
+        valid_options = ["civil", "nautical", "astronomical"]
+        if self.observations_within not in valid_options:
+            raise ValueError(f"observations_within must be one of {valid_options}")
+        if self.observations_within == "civil":
+            self.obs_within_limits = [self.civil_evening, self.civil_morning]
+            self.night_time_range = self.time_range_civil
+        elif self.observations_within == "nautical":
+            self.obs_within_limits = [self.nautical_evening, self.nautical_morning]
+            self.night_time_range = self.time_range_nautical
+        elif self.observations_within == "astronomical":
+            self.obs_within_limits = [self.astronomical_evening, self.astronomical_morning]
+            self.night_time_range = self.time_range_astronomical
 
 
 class Program:
@@ -122,33 +137,39 @@ class Merit:
         return self.func(observation, **all_args)
 
     def __str__(self):
-        return f"Merit({self.name}, {self.merit_type})"
+        return f"Merit({self.name}, {self.merit_type}, {self.parameters})"
 
     def __repr__(self):
-        return f"Merit({self.name}, {self.merit_type})"
+        return self.__str__()
 
 
 class Target:
-    def __init__(self, name: str, prog: Program, coords: SkyCoord, last_obs: Time):
+    def __init__(self, name: str, prog: Program, coords: SkyCoord, last_obs: Time, priority: int):
         self.name = name
         self.program = prog
         self.coords = coords
+        self.ra_deg = coords.ra.deg
+        self.dec_deg = coords.dec.deg
         self.last_obs = last_obs.jd
+        self.priority = self.renormalize_priority(priority)
         self.merits: List[Merit] = []  # List of all merits
 
     def add_merit(self, merit: Merit):
+        """Add a merit to the target"""
         self.merits.append(merit)
+
+    def renormalize_priority(self, priority: int):
+        """Renormalize the priority of the target"""
+        return (4 - priority) / 4
 
     def __str__(self):
         lines = [
-            "Target(Name: {self.name},",
+            f"Target(Name: {self.name},",
             f"       Program: {self.program.progID},",
             f"       Coordinates: {self.coords},",
             f"       Last observation: {self.last_obs},",
+            f"       Priority: {self.priority},",
             f"       Merits: {self.merits},",
-            f"       Time share allocated: {self.program.time_share_allocated},",
-            f"       Time share current: {self.program.time_share_current},",
-            f"       Time share pct diff: {self.program.time_share_pct_diff})",
         ]
 
         return "\n".join(lines)
@@ -166,6 +187,7 @@ class Observation:
         self.target = target
         self.start_time = start_time.jd
         self.exposure_time = exposure_time.value
+        self.end_time = self.start_time + self.exposure_time
         self.night = night
         self.observer = observer  # Observer location
         self.score: float = 0.0  # Initialize score to zero
@@ -173,32 +195,12 @@ class Observation:
         # self.time_array: Time = None
         self.unique_id = uuid.uuid4()
 
-        # Calculate the minimum and maximum altitude of the target during the night of the observation
-        # Create the AltAz frame for the observation during the night
-        # Check for an at_night merit
-        if any(merit.func.__name__ == "at_night" for merit in self.target.merits):
-            # Get the at_night merit
-            at_night_merit = [
-                merit
-                for merit in self.target.merits
-                if merit.merit_type == "veto" and merit.func.__name__ == "at_night"
-            ][0]
-            # Get the which parameter of the at_night merit
-            twilight = at_night_merit.parameters["which"]
-        else:
-            twilight = "astronomical"
-
-        # Get the time range for the night
-        if twilight == "civil":
-            self.night_time_range = self.night.time_range_civil
-        elif twilight == "nautical":
-            self.night_time_range = self.night.time_range_nautical
-        elif twilight == "astronomical":
-            self.night_time_range = self.night.time_range_astronomical
+        night_time_range = self.night.night_time_range
+        self.night_time_range_jd = night_time_range.value
 
         # Create the AltAz frame for the observation during the night
         self.night_altaz_frame = self.target.coords.transform_to(
-            self.observer.altaz(time=self.night_time_range)
+            self.observer.altaz(time=night_time_range)
         )
         # Get the altitudes and airmasses of the target during the night
         self.night_altitudes = self.night_altaz_frame.alt.deg
@@ -216,22 +218,11 @@ class Observation:
         self.max_altitude = min(self.night_altitudes.max(), tel_alt_upper_lim)
 
         # Figure out the rise and set times for this target
-        # But.. what if the target is not up at the current start time?
-        # Then the rise time will be the next (will be up soon) or previous (already set and will not)
-        # rise until the end of the night
-        # First find which is the nearest to current time (rise of set)
-
         nearest_rise_time = observer.target_rise_time(
-            start_time,
-            self.target.coords,
-            horizon=tel_alt_lower_lim * u.deg,
-            which="nearest",
+            start_time, self.target.coords, horizon=tel_alt_lower_lim * u.deg, which="nearest"
         ).jd
         nearest_set_time = observer.target_set_time(
-            start_time,
-            self.target.coords,
-            horizon=tel_alt_lower_lim * u.deg,
-            which="nearest",
+            start_time, self.target.coords, horizon=tel_alt_lower_lim * u.deg, which="nearest"
         ).jd
         # Calculate timedelta between the start time and the nearest rise and set times
         rise_timedelta = abs(nearest_rise_time - self.start_time)
@@ -240,24 +231,18 @@ class Observation:
             # If the rise time is closer than the set time, then the target is rising
             self.rise_time = nearest_rise_time
             self.set_time = observer.target_set_time(
-                start_time,
-                self.target.coords,
-                horizon=tel_alt_lower_lim * u.deg,
-                which="next",
+                start_time, self.target.coords, horizon=tel_alt_lower_lim * u.deg, which="next"
             ).jd
         elif set_timedelta < rise_timedelta:
             # If the set time is closer than the rise time, then the target already set
             self.rise_time = observer.target_rise_time(
-                start_time,
-                self.target.coords,
-                horizon=tel_alt_lower_lim * u.deg,
-                which="previous",
+                start_time, self.target.coords, horizon=tel_alt_lower_lim * u.deg, which="previous"
             ).jd
-            self.set_time = nearest_rise_time
+            self.set_time = nearest_set_time
 
     def update_alt_airmass(self):
         # Find indices
-        night_range_jd = self.night_time_range.value
+        night_range_jd = self.night_time_range_jd
         start_idx = np.searchsorted(night_range_jd, self.start_time, side="left")
         end_idx = np.searchsorted(
             night_range_jd, self.start_time + self.exposure_time, side="right"
@@ -277,15 +262,33 @@ class Observation:
 
         return np.prod(self.veto_merits)  # type: ignore
 
+    def separation_calc(self, previous_obs):
+        prev_coords = (previous_obs.target.ra_deg, previous_obs.target.dec_deg)
+        obs_corrds = (self.target.ra_deg, self.target.dec_deg)
+        return np.sqrt(
+            (prev_coords[0] - obs_corrds[0]) ** 2 + (prev_coords[1] - obs_corrds[1]) ** 2
+        )
+
     def update_start_time(self, previous_obs):
         # Update of the start time according to slew times and instrument configuration
-        # For now it just adds the exposure time, assuming no overheads
-        # TODO Implement the overheads of slew time from previous observation and instrument configuration
-        self.start_time = previous_obs.start_time + previous_obs.exposure_time
+        # sep_deg = previous_obs.target.coords.separation(self.target.coords).deg
+
+        sep_deg = self.separation_calc(previous_obs)
+        # # FIX: This is a dummy slew time for now, replace with fetching from config file
+        slew_rate = 2  # degrees per second
+        slew_time = (sep_deg / slew_rate) / 86400  # in days
+        cor_readout = 20 / 86400  # seconds
+        self.start_time = previous_obs.end_time + slew_time + cor_readout
+        # self.start_time = previous_obs.end_time
+        self.end_time = self.start_time + self.exposure_time
+
         # Update the time array becaue the start time changed
         self.update_alt_airmass()
         # Calculate new rank score based on new start time
-        self.evaluate_score()
+        if self.feasible():
+            self.evaluate_score()
+        else:
+            self.score = 0.0
 
     def evaluate_score(self, verbose: bool = False) -> float:
         # Run the full rank function for the observation (dummy score for now)
@@ -294,7 +297,8 @@ class Observation:
         # --- Fairness ---
         # Balances time allocation and priority
         # TODO Implement the fairness
-        fairness: float = 1
+        # fairness = self.target.priority
+        fairness = 1.0
 
         # --- Sensibility ---
         # Veto merits that check for observatbility
@@ -304,7 +308,7 @@ class Observation:
         # Efficiency merits that check for scientific goal
         efficiency = np.mean(
             [
-                merit.evaluate(self)
+                merit.evaluate(self, verbose=verbose)
                 for merit in self.target.merits
                 if merit.merit_type == "efficiency"
             ]
@@ -346,21 +350,50 @@ class Plan:
     def __init__(self):
         self.observations = []
         self.score = 0.0
-        # TODO: rethink what the best type class for the observation_night should be
-        # If a simple Time object with the time and date of the sunset
-        # Or just a date, or julian date, or something else
+        self.overhead_time = 0.0
+        self.observation_time = 0.0
+        self.overhead_ratio = 0.0
 
     def add_observation(self, observation: Observation):
         self.observations.append(observation)
         return self
+
+    def calculate_overhead(self):
+        # Calculate the overheads for the plan
+        # Go through all observation and count the time between the end of one observation and the
+        # start of the next one
+        overhead_time = 0.0
+        observation_time = self.observations[0].exposure_time
+        for i, obs in enumerate(self.observations):
+            # If its the first observation, skip this
+            if i != 0:
+                # Get the previous observation
+                prev_obs = self.observations[i - 1]
+                # Calculate the overhead time
+                overhead_time += obs.start_time - prev_obs.end_time
+                # Calculate observation time
+                observation_time += obs.exposure_time
+        # Check that overhead and observation time add up to the total time
+        assert (
+            abs(
+                (observation_time + overhead_time)
+                - (self.observations[-1].end_time - self.observations[0].start_time)
+            )
+            < 1e-7
+        )
+        self.observation_time = (observation_time * u.day).to(u.hour)
+        self.overhead_time = (overhead_time * u.day).to(u.hour)
+        self.overhead_ratio = overhead_time / observation_time
+        self.observation_ratio = observation_time / (observation_time + overhead_time)
 
     def evaluate_plan(self) -> float:
         # Evaluate the whole observation plan
         self.score = float(
             np.mean([obs.score for obs in self.observations]) if len(self) > 0 else 0
         )  # type: ignore
+        self.calculate_overhead()
         # TODO Add some other metrics, like the total time used, minimization of overheads, etc.
-        return self.score
+        return self.score * self.observation_ratio
 
     def plot(self, save: bool = False):
         """Plot the schedule for the night."""
@@ -368,16 +401,16 @@ class Plan:
 
         # Get sunset and sunrise times for this night
         night = first_obs.night
-        sunset = Time(night.sunset, format='jd')
-        sunrise = Time(night.sunrise, format='jd')
+        sunset = Time(night.sunset, format="jd")
+        sunrise = Time(night.sunrise, format="jd")
 
         # Get the times for the different twilights
-        civil_evening = Time(night.civil_evening, format='jd').datetime
-        nautical_evening = Time(night.nautical_evening, format='jd').datetime
-        astronomical_evening = Time(night.astronomical_evening, format='jd').datetime
-        civil_morning = Time(night.civil_morning, format='jd').datetime
-        nautical_morning = Time(night.nautical_morning, format='jd').datetime
-        astronomical_morning = Time(night.astronomical_morning, format='jd').datetime
+        civil_evening = Time(night.civil_evening, format="jd").datetime
+        nautical_evening = Time(night.nautical_evening, format="jd").datetime
+        astronomical_evening = Time(night.astronomical_evening, format="jd").datetime
+        civil_morning = Time(night.civil_morning, format="jd").datetime
+        nautical_morning = Time(night.nautical_morning, format="jd").datetime
+        astronomical_morning = Time(night.astronomical_morning, format="jd").datetime
 
         # Get which programs are part of this plan
         programs = list(
@@ -391,12 +424,12 @@ class Plan:
 
         plt.figure(figsize=(13, 5))
 
-        for obs in self.observations:
-            time_range = Time(np.linspace(
-                obs.start_time, (obs.start_time + obs.exposure_time), 20
-            ), format='jd').datetime
+        for i, obs in enumerate(self.observations):
+            # TODO clean up this part by using existing variables in the obs objects
+            time_range = Time(
+                np.linspace(obs.start_time, (obs.start_time + obs.exposure_time), 20), format="jd"
+            ).datetime
             altitudes = obs.target.coords.transform_to(lasilla.altaz(time=time_range)).alt.deg
-
             # Generate an array of equally spaced Julian Dates
             num_points = 300  # The number of points you want
             jd_array = np.linspace(sunset.jd, sunrise.jd, num_points)
@@ -483,9 +516,21 @@ class Plan:
         time_format = mdates.DateFormatter("%H:%M:%S")
         plt.gca().xaxis.set_major_formatter(time_format)
 
+        # Add a legend at the bottom of the plot to identiy the program colors
+        legend_elements = [
+            plt.Line2D(
+                [0],
+                [0],
+                color=prog_colors[prog],
+                lw=2,
+                label=f"{prog}",
+            )
+            for prog in programs
+        ]
+        plt.legend(handles=legend_elements, loc="lower center", ncol=len(programs))
+
         # In the title put the date of the schedule
         plt.title(f"Schedule for the night of {self.observations[0].night.night_date}")
-
         plt.xlabel("Time [UTC]")
         plt.ylabel("Altitude [deg]")
         plt.ylim(30, 90)

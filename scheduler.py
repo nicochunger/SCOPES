@@ -11,8 +11,23 @@ from astropy.time import Time
 from class_definitions import Observation, Plan
 
 
+## ----- HELPER FUNCTIONS ----- ##
 def pickle_deepcopy(obj):
     return pickle.loads(pickle.dumps(obj, -1))
+
+
+def obslist_deepcopy(obslist):
+    """
+    An implementation of deepcoping a list of observations by creating new emtpy observations
+    and assigning the attributes of the original observations to the new ones.
+    """
+    new_obslist = []
+    for obs in obslist:
+        new_obs = Observation.__new__(Observation)
+        new_obs.__dict__ = obs.__dict__.copy()
+        new_obslist.append(new_obs)
+    return new_obslist
+
 
 def get_observation_night(observation: Observation) -> Time:
     """Return the night of an observation."""
@@ -20,9 +35,16 @@ def get_observation_night(observation: Observation) -> Time:
     return sunset.date()
 
 
-def update_start_times(observations: List[Observation], previous_obs: Observation):
+def update_start_times(observations: List[Observation], new_start_time: float):
     """Update the start time of all observations in the list based on the previous observation."""
-    # TODO vectorize this operation as it is the bottleneck of the scheduler
+    for obs in observations:
+        obs.start_time = new_start_time
+        obs.end_time = obs.start_time + obs.exposure_time
+        obs.update_alt_airmass()
+
+
+def update_start_from_prev(observations: List[Observation], previous_obs: Observation):
+    """Update the start time of all observations in the list based on the previous observation."""
     for obs in observations:
         obs.update_start_time(previous_obs)
 
@@ -34,21 +56,20 @@ def update_start_times(observations: List[Observation], previous_obs: Observatio
 def forwardP(
     start_obs: Union[Observation, Time],
     available_observations: List[Observation],
-    lookahead_distance = None,
+    lookahead_distance=None,
 ):
     """Basic scheduler that simply continues a Plan from the starting observation by
     sequentially choosing the highest scoring observation."""
 
     # Set the lookahead distance to the number of available observations if not specified
     # Or to finish the night if there are more available observations than time in the night
-    if (lookahead_distance is not None) and (
-        len(available_observations) <= lookahead_distance
-    ):
+    if (lookahead_distance is not None) and (len(available_observations) <= lookahead_distance):
         raise ValueError(
             f"Number of available observations ({len(available_observations)}) "
             f"must be less than or equal to lookahead distance ({lookahead_distance})"
         )
     elif lookahead_distance is None:
+        # Equivalent to planning until the end of night
         lookahead_distance = len(available_observations)
 
     # Create deep copy of available observations
@@ -58,13 +79,17 @@ def forwardP(
     observation_plan = Plan()
     if isinstance(start_obs, Observation):
         observation_plan.add_observation(start_obs)
-        update_start_times(Obs_copy, start_obs)
+        update_start_from_prev(Obs_copy, start_obs)
     elif isinstance(start_obs, Time):
         for obs in Obs_copy:
-            obs.start_time = start_obs
+            obs.start_time = start_obs.jd
+            obs.end_time = obs.start_time + obs.exposure_time
             obs.update_alt_airmass()
+    else:
+        raise TypeError(f"start_obs must be of type Observation or Time, not {type(start_obs)}")
 
     # Add candidate observation to plan K times
+
     for _ in range(lookahead_distance):
         # Initialize Q as an empty list to store ranked observations
         Q = []
@@ -95,7 +120,7 @@ def forwardP(
             Obs_copy.remove(o_double_prime)
 
             # Update the start time of all remaining observations
-            update_start_times(Obs_copy, o_double_prime)
+            update_start_from_prev(Obs_copy, o_double_prime)
 
     # Evaluate the plan before returning
     observation_plan.evaluate_plan()
@@ -170,12 +195,10 @@ class DPPlanner:
                 new_plan.add_observation(obs)
 
                 # Update the current time based on the end time of the added observation
-                update_start_times(remaining_copy, obs)
+                update_start_from_prev(remaining_copy, obs)
 
                 # Recursive call to find best plan from this point forward
-                _, temp_plan = self.dp_recursion(
-                    remaining_copy, new_plan, max_plan_length, K
-                )
+                _, temp_plan = self.dp_recursion(remaining_copy, new_plan, max_plan_length, K)
 
                 # Evaluate this complete plan
                 score = temp_plan.evaluate_plan()
@@ -193,9 +216,10 @@ class DPPlanner:
 
 # Beam search scheduler
 class BeamSearchPlanner:
-    def __init__(self):
-        self.total_counter: int = 0
-        self.depth: int = 0
+    def __init__(self, plan_start_time: float = None) -> None:
+        self.total_counter = 0
+        self.depth = 0
+        self.plan_start_time = plan_start_time
 
     @dataclass(order=True)
     class PrioritizedItem:
@@ -204,8 +228,14 @@ class BeamSearchPlanner:
         obs: Any = field(compare=False)
 
     def dp_beam_search(
-        self, initial_observations: List[Observation], max_plan_length: int, K: int = 5
+        self, initial_observations: List[Observation], max_plan_length: int = None, K: int = 5
     ) -> Plan:
+        # Check if there is a plan start time
+        if self.plan_start_time is not None:
+            update_start_times(initial_observations, self.plan_start_time)
+        if max_plan_length is None:
+            max_plan_length = len(initial_observations)
+
         # Initialize two priority queues
         PQ_current: PriorityQueue = PriorityQueue()
         PQ_next: PriorityQueue = PriorityQueue()
@@ -215,27 +245,18 @@ class BeamSearchPlanner:
 
         # Initialize best plan and best score to None and -inf
         best_plan: Plan = Plan()
-        # best_score = float('inf')
 
         while not PQ_current.empty():
             self.total_counter += 1
 
             # Retrieve the highest-score plan from the current priority queue
             pq_current_item = PQ_current.get()
-            current_score = pq_current_item.score
+            # current_score = pq_current_item.score
             current_plan = pq_current_item.plan
             remaining_observations = pq_current_item.obs
 
-            # Update the best plan if this one is better
-            # print(f"Depth: {self.depth}   Current score: {current_score:.3f}")
-
-            best_current_plan = Plan()
-            if current_score < -best_current_plan.score:
-                best_current_plan = current_plan
-
             # Check stopping criteria
             if len(current_plan) >= max_plan_length:
-                best_plan = PQ_current.get().plan
                 break
 
             Q = []
@@ -244,15 +265,22 @@ class BeamSearchPlanner:
                 if obs.feasible():
                     score = obs.evaluate_score()
                     Q.append((score, obs))
+            if not Q:
+                # Termination condition if no feasible observations remain
+                break
 
             # Sort Q by score
             Q.sort(reverse=True, key=lambda x: x[0])
-            for _, obs in Q[:K+5]:
-                new_plan = pickle_deepcopy(current_plan).add_observation(obs)
-                new_remaining = pickle_deepcopy(remaining_observations)
-                # new_remaining = np.delete(new_remaining, np.where(new_remaining == obs)[0][0])
+            for _, obs in Q:
+                # Copy of the plan
+                new_plan = Plan()
+                new_plan.observations = current_plan.observations[:]
+                new_plan.add_observation(obs)
+                # Copy of remaining obs
+                new_remaining = obslist_deepcopy(remaining_observations)
                 new_remaining.remove(obs)
-                update_start_times(new_remaining, obs)
+
+                update_start_from_prev(new_remaining, obs)
                 new_score = new_plan.evaluate_plan()
                 PQ_next.put(self.PrioritizedItem(-new_score, new_plan, new_remaining))
 
@@ -262,11 +290,15 @@ class BeamSearchPlanner:
                 # print(f"Current best plan: {best_current_plan}")
                 self.depth += 1
                 # Put top-K plans in the PQ_current queue
+                best_score = 0.0
                 for _ in range(min(K, PQ_next.qsize())):
-                    PQ_current.put(PQ_next.get())
-
-                # print(f"PQ_current size: {PQ_current.qsize()}")
-                # assert PQ_current.qsize() == min(K, PQ_next.qsize())
+                    pq_current_item = PQ_next.get()
+                    # Update the best plan if this one is better
+                    if pq_current_item.score < -best_score:
+                        best_plan = pq_current_item.plan
+                        best_score = pq_current_item.score
+                    PQ_current.put(pq_current_item)
+                # Update score of best plan
 
                 # Clear PQ_next for the next iteration
                 PQ_next = PriorityQueue()
@@ -279,7 +311,12 @@ class GeneticAlgorithm:
     def __init__(self) -> None:
         self.total_counter: int = 0
 
-    def nsga2(self, available_observations: List[Observation],
-              max_plan_length: int, population_size: int, generations: int):
-        """ Non-dominated Sorting Genetic Algorithm II (NSGA-II) implementation """
+    def nsga2(
+        self,
+        available_observations: List[Observation],
+        max_plan_length: int,
+        population_size: int,
+        generations: int,
+    ):
+        """Non-dominated Sorting Genetic Algorithm II (NSGA-II) implementation"""
         return None
