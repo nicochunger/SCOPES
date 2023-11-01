@@ -152,11 +152,15 @@ class Target:
         self.dec_deg = coords.dec.deg
         self.last_obs = last_obs.jd
         self.priority = self.renormalize_priority(priority)
-        self.merits: List[Merit] = []  # List of all merits
+        self.efficiency_merits: List[Merit] = []  # List of all merits
+        self.veto_merits: List[Merit] = []  # List to store veto merits
 
     def add_merit(self, merit: Merit):
         """Add a merit to the target"""
-        self.merits.append(merit)
+        if merit.merit_type == "veto":
+            self.veto_merits.append(merit)
+        elif merit.merit_type == "efficiency":
+            self.efficiency_merits.append(merit)
 
     def renormalize_priority(self, priority: int):
         """Renormalize the priority of the target"""
@@ -169,7 +173,8 @@ class Target:
             f"       Coordinates: {self.coords},",
             f"       Last observation: {self.last_obs},",
             f"       Priority: {self.priority},",
-            f"       Merits: {self.merits},",
+            f"       Veto Merits: {self.veto_merits},",
+            f"       Efficiency Merits: {self.efficiency_merits})",
         ]
 
         return "\n".join(lines)
@@ -250,17 +255,16 @@ class Observation:
         self.obs_altitudes = self.night_altitudes[start_idx:end_idx]
         self.obs_airmasses = self.night_airmasses[start_idx:end_idx]
 
-    def update_veto_merits(self):
-        # Update all veto merits (dummy values for now)
-        self.veto_merits = [
-            merit.evaluate(self) for merit in self.target.merits if merit.merit_type == "veto"
-        ]
-
     def feasible(self) -> float:
-        # Update all veto merits (dummy values for now) and return their product
-        self.update_veto_merits()
-
-        return np.prod(self.veto_merits)  # type: ignore
+        # Update all veto merits and return their product
+        veto_merit_values = []
+        for merit in self.target.veto_merits:
+            value = merit.evaluate(self)
+            veto_merit_values.append(value)
+            if value == 0.0:
+                break
+        self.sensibility_value = np.prod(veto_merit_values)
+        return self.sensibility_value  # type: ignore
 
     def separation_calc(self, previous_obs):
         prev_coords = (previous_obs.target.ra_deg, previous_obs.target.dec_deg)
@@ -281,14 +285,13 @@ class Observation:
         self.start_time = previous_obs.end_time + slew_time + cor_readout
         # self.start_time = previous_obs.end_time
         self.end_time = self.start_time + self.exposure_time
-
-        # Update the time array becaue the start time changed
-        self.update_alt_airmass()
-        # Calculate new rank score based on new start time
-        if self.feasible():
-            self.evaluate_score()
-        else:
+        if self.end_time > self.night.obs_within_limits[1]:
             self.score = 0.0
+        else:
+            # Update the time array becaue the start time changed
+            self.update_alt_airmass()
+            # Calculate new rank score based on new start time
+            self.evaluate_score()
 
     def evaluate_score(self, verbose: bool = False) -> float:
         # Run the full rank function for the observation (dummy score for now)
@@ -302,16 +305,12 @@ class Observation:
 
         # --- Sensibility ---
         # Veto merits that check for observatbility
-        sensibility = self.feasible()
+        sensibility = self.sensibility_value
 
         # --- Efficiency ---
         # Efficiency merits that check for scientific goal
         efficiency = np.mean(
-            [
-                merit.evaluate(self, verbose=verbose)
-                for merit in self.target.merits
-                if merit.merit_type == "efficiency"
-            ]
+            [merit.evaluate(self, verbose=verbose) for merit in self.target.efficiency_merits]
         )
 
         # --- Rank Score ---
@@ -350,9 +349,7 @@ class Plan:
     def __init__(self):
         self.observations = []
         self.score = 0.0
-        self.overhead_time = 0.0
-        self.observation_time = 0.0
-        self.overhead_ratio = 0.0
+        self.evaluation = 0.0
 
     def add_observation(self, observation: Observation):
         self.observations.append(observation)
@@ -362,29 +359,21 @@ class Plan:
         # Calculate the overheads for the plan
         # Go through all observation and count the time between the end of one observation and the
         # start of the next one
-        overhead_time = 0.0
-        observation_time = self.observations[0].exposure_time
+        first_obs = self.observations[0]
+        observation_time = 0.0  # first_obs.exposure_time
         for i, obs in enumerate(self.observations):
-            # If its the first observation, skip this
-            if i != 0:
-                # Get the previous observation
-                prev_obs = self.observations[i - 1]
-                # Calculate the overhead time
-                overhead_time += obs.start_time - prev_obs.end_time
-                # Calculate observation time
-                observation_time += obs.exposure_time
+            observation_time += obs.exposure_time
         # Check that overhead and observation time add up to the total time
-        assert (
-            abs(
-                (observation_time + overhead_time)
-                - (self.observations[-1].end_time - self.observations[0].start_time)
-            )
-            < 1e-7
+        overhead_time = self.observations[-1].end_time - first_obs.start_time - observation_time
+        available_obs_time = (
+            first_obs.night.obs_within_limits[1] - first_obs.night.obs_within_limits[0]
         )
+        unused_time = available_obs_time - observation_time - overhead_time
         self.observation_time = (observation_time * u.day).to(u.hour)
         self.overhead_time = (overhead_time * u.day).to(u.hour)
+        self.unused_time = (unused_time * u.day).to(u.hour)
         self.overhead_ratio = overhead_time / observation_time
-        self.observation_ratio = observation_time / (observation_time + overhead_time)
+        self.observation_ratio = observation_time / available_obs_time
 
     def evaluate_plan(self) -> float:
         # Evaluate the whole observation plan
@@ -392,8 +381,8 @@ class Plan:
             np.mean([obs.score for obs in self.observations]) if len(self) > 0 else 0
         )  # type: ignore
         self.calculate_overhead()
-        # TODO Add some other metrics, like the total time used, minimization of overheads, etc.
-        return self.score * self.observation_ratio
+        self.evaluation = self.score * self.observation_ratio
+        return self.evaluation
 
     def plot(self, save: bool = False):
         """Plot the schedule for the night."""

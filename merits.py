@@ -29,11 +29,11 @@ def airmass(observation: Observation, max: float) -> float:
     # TODO Implement the hyperbolic tangent function so that there is some leeway in the airmass
     """
     # Claculate airmass throughout the exposure of the observation
-    if len(observation.obs_airmasses) == 0:
-        return 0.0
-    else:
+    try:
         max_airmass = observation.obs_airmasses.max()
         return max_airmass < max
+    except:
+        return 0.0
 
 
 def altitude(
