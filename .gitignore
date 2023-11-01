@@ -2,7 +2,7 @@
 __pycache__/
 *.py[cod]
 *$py.class
-.pyc
+*.pyc
 
 # C extensions
 *.so
@@ -82,6 +82,11 @@ target/
 # IPython
 profile_default/
 ipython_config.py
+
+# Misc
+*.pkl
+*.stats
+*.png
 
 # pyenv
 #   For a library or package, you might want to ignore these files since the code is

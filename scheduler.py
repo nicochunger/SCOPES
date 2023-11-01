@@ -52,80 +52,160 @@ def update_start_from_prev(observations: List[Observation], previous_obs: Observ
 ## ----- SCHEDULERS ----- ##
 
 
-# Basic forward scheduler, greedy search
-def forwardP(
-    start_obs: Union[Observation, Time],
-    available_observations: List[Observation],
-    lookahead_distance=None,
-):
-    """Basic scheduler that simply continues a Plan from the starting observation by
-    sequentially choosing the highest scoring observation."""
+class generateQ:
+    def __init__(self, plan_start_time: float = None):
+        self.plan_start_time = plan_start_time
 
-    # Set the lookahead distance to the number of available observations if not specified
-    # Or to finish the night if there are more available observations than time in the night
-    if (lookahead_distance is not None) and (len(available_observations) <= lookahead_distance):
-        raise ValueError(
-            f"Number of available observations ({len(available_observations)}) "
-            f"must be less than or equal to lookahead distance ({lookahead_distance})"
-        )
-    elif lookahead_distance is None:
-        # Equivalent to planning until the end of night
-        lookahead_distance = len(available_observations)
+    # Basic forward scheduler, greedy search
+    def forwardP(
+        self,
+        start_obs: Union[Observation, float],
+        available_obs: List[Observation],
+        lookahead_distance=None,
+    ):
+        """Basic scheduler that simply continues a Plan from the starting observation by
+        sequentially choosing the highest scoring observation."""
 
-    # Create deep copy of available observations
-    Obs_copy = deepcopy(available_observations)
+        # Set the lookahead distance to the number of available observations if not specified
+        # Or to finish the night if there are more available observations than time in the night
+        if (lookahead_distance is not None) and (len(available_obs) <= lookahead_distance):
+            raise ValueError(
+                f"Number of available observations ({len(available_obs)}) "
+                f"must be less than or equal to lookahead distance ({lookahead_distance})"
+            )
+        elif lookahead_distance is None:
+            # Equivalent to planning until the end of night
+            lookahead_distance = len(available_obs)
 
-    # Initialize the Plan object according to if the starting codition is a Time or Observation
-    observation_plan = Plan()
-    if isinstance(start_obs, Observation):
-        observation_plan.add_observation(start_obs)
-        update_start_from_prev(Obs_copy, start_obs)
-    elif isinstance(start_obs, Time):
-        for obs in Obs_copy:
-            obs.start_time = start_obs.jd
-            obs.end_time = obs.start_time + obs.exposure_time
-            obs.update_alt_airmass()
-    else:
-        raise TypeError(f"start_obs must be of type Observation or Time, not {type(start_obs)}")
+        # Initialize the Plan object according to if the starting codition is a Time or Observation
+        observation_plan = Plan()
+        if isinstance(start_obs, Observation):
+            observation_plan.add_observation(start_obs)
+            update_start_from_prev(available_obs, start_obs)
+        elif isinstance(start_obs, float):
+            for obs in available_obs:
+                obs.start_time = start_obs
+                obs.end_time = obs.start_time + obs.exposure_time
+                obs.update_alt_airmass()
+        else:
+            raise TypeError(
+                f"start_obs must be of type Observation or Time (as a float in jd), not {type(start_obs)}"
+            )
 
-    # Add candidate observation to plan K times
+        # Add candidate observation to plan K times
 
-    for _ in range(lookahead_distance):
-        # Initialize Q as an empty list to store ranked observations
-        Q = []
+        for _ in range(lookahead_distance):
+            # Initialize Q as an empty list to store ranked observations
+            Q = []
 
-        # Evaluate each available observation
-        for o_prime in Obs_copy:
-            if o_prime.feasible():
-                score = o_prime.evaluate_score()
-                # Insert into Q ensuring Q is sorted by score
-                Q.append((score, o_prime))
+            # Evaluate each available observation
+            for o_prime in available_obs:
+                if o_prime.feasible():
+                    score = o_prime.evaluate_score()
+                    # Insert into Q ensuring Q is sorted by score
+                    Q.append((score, o_prime))
 
-        # Sort Q by score
-        Q.sort(reverse=True, key=lambda x: x[0])
+            # Sort Q by score
+            Q.sort(reverse=True, key=lambda x: x[0])
 
-        # Check exit conditions
-        if not Q or len(observation_plan) >= lookahead_distance:
-            break
+            # Check exit conditions
+            if not Q or len(observation_plan) >= lookahead_distance:
+                break
 
-        # Select the highest ranking observation
-        if Q:
             # Select the highest ranking observation
-            _, o_double_prime = Q[0]
+            if Q:
+                # Select the highest ranking observation
+                _, o_double_prime = Q[0]
 
-            # Add the selected observation to the plan
-            observation_plan.add_observation(o_double_prime)
+                # Add the selected observation to the plan
+                observation_plan.add_observation(o_double_prime)
 
-            # Remove the selected observation from the available observations
-            Obs_copy.remove(o_double_prime)
+                # Remove the selected observation from the available observations
+                available_obs.remove(o_double_prime)
 
-            # Update the start time of all remaining observations
-            update_start_from_prev(Obs_copy, o_double_prime)
+                # Update the start time of all remaining observations
+                update_start_from_prev(available_obs, o_double_prime)
 
-    # Evaluate the plan before returning
-    observation_plan.evaluate_plan()
+        # Evaluate the plan before returning
+        observation_plan.evaluate_plan()
 
-    return observation_plan
+        return observation_plan
+
+    def generateQ(self, available_obs: List[Observation], max_plan_length=None, K: int = 5):
+        """
+        Create a plan from a list of obsevations and a starting time. The way it works is by using
+        the forwardP function to generate a plan from the starting time to the end of the night
+        but at each step it does this for the top K observations, and it chooses the observation
+        that has the highest plan score at the end of the night. That would become the first
+        observation of the plan. Then for the second it repeats the same process. It takes the
+        top K observations runs forwardP until the end of the night, and assesses the plan score
+        (but of the entire night, including the observation that was added before). It then chooses
+        the observation that has the highest plan score at the end of the night, and that becomes
+        the second observation of the plan. It repeats this process until the plan is full.
+        """
+        remaining_obs = obslist_deepcopy(available_obs)
+        # Check if there is a plan start time
+        if self.plan_start_time:
+            update_start_times(remaining_obs, self.plan_start_time)
+        else:
+            raise ValueError("Plan start time must be specified")
+        # Check max_plan_length
+        if max_plan_length and max_plan_length <= 0:
+            raise ValueError("max_plan_length should be a positive integer or None.")
+        elif max_plan_length is None:
+            max_plan_length = len(remaining_obs)
+
+        # Create an empty plan to store the final results
+        final_plan = Plan()
+
+        # Iterate until the plan is full or remaining_obs is empty
+        while remaining_obs and (len(final_plan) < max_plan_length):
+            # Score each observation to sort them and pick the top K
+            obs_scores = []
+            for o in remaining_obs:
+                if o.feasible():
+                    score = o.evaluate_score()
+                    obs_scores.append((score, o))
+            if not obs_scores:
+                # No feasible observations remain
+                break
+            obs_scores.sort(reverse=True, key=lambda x: x[0])
+
+            top_k_observations = [obs for _, obs in obs_scores[:K]]
+
+            # Track the best observation and corresponding plan
+            best_observation = None
+            best_plan = None
+
+            for obs in top_k_observations:
+                # Create a deep copy of available_obs
+                remaining_obs_copy = obslist_deepcopy(remaining_obs)
+                # Remove current obs from the copy
+                remaining_obs_copy.remove(obs)
+
+                # Generate plan using forwardP with the modified list
+                plan = self.forwardP(obs, remaining_obs_copy)
+
+                # If the current plan is better than the best, update best_plan and best_observation
+                if not best_plan or (plan.score > best_plan.score):
+                    best_plan = plan
+                    best_observation = obs
+
+            if K == 1:
+                # If K=1, the best plan is the one generated by forwardP
+                final_plan = best_plan
+                break
+            else:
+                # Add the best observation to the final plan
+                final_plan.add_observation(best_observation)
+                # Remove the best observation from the available observations list
+                remaining_obs.remove(best_observation)
+                update_start_from_prev(remaining_obs, best_observation)
+
+        # Evaluate the final plan
+        final_plan.evaluate_plan()
+
+        return final_plan
 
 
 # Dynamic programming scheduler using recursion
@@ -233,6 +313,8 @@ class BeamSearchPlanner:
         # Check if there is a plan start time
         if self.plan_start_time is not None:
             update_start_times(initial_observations, self.plan_start_time)
+        else:
+            raise ValueError("Plan start time must be specified")
         if max_plan_length is None:
             max_plan_length = len(initial_observations)
 

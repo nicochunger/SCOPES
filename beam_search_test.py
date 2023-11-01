@@ -29,7 +29,7 @@ except FileNotFoundError:
     merit_list = [airmass_merit, altitude_merit, at_night_merit, culmination_merit, egress_merit]
 
     # Create target and observation lists for each program
-    progs = {600: 20, 708: 15, 714: 8}
+    progs = {600: 20, 708: 15, 714: 15}
     targets_all = []
     observations_all = []
     for prog_num, exp_time in progs.items():
@@ -58,5 +58,11 @@ bs_plan = beamsearch.dp_beam_search(
     # max_plan_length=15
 )
 
+print(f"Length = {len(bs_plan)}")
+print(f"Score = {bs_plan.evaluate_plan():.6f}")
+bs_plan.calculate_overhead()
+print(f"Overhead time = {bs_plan.overhead_time:.5f}")
+print(f"Observation time = {bs_plan.observation_time:.5f}")
+print(f"Overhead ratio = {bs_plan.overhead_ratio:.5f}")
 
 bs_plan.plot(save=True)
