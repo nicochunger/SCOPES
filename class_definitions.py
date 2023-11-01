@@ -384,6 +384,17 @@ class Plan:
         self.evaluation = self.score * self.observation_ratio
         return self.evaluation
 
+    def print_stats(self):
+        self.evaluate_plan()
+        self.calculate_overhead()
+        print(f"Length = {len(self)}")
+        print(f"Score = {self.score:.6f}")
+        print(f"Evaluation = {self.evaluation:.6f}")
+        print(f"Overhead time = {self.overhead_time:.5f}")
+        print(f"Overhead ratio = {self.overhead_ratio:.5f}")
+        print(f"Observation time = {self.observation_time:.5f}")
+        print(f"Observation ratio = {self.observation_ratio:.5f}")
+
     def plot(self, save: bool = False):
         """Plot the schedule for the night."""
         first_obs = self.observations[0]
@@ -411,7 +422,7 @@ class Plan:
         # Create a dictionary that maps each program to a color
         prog_colors = dict(zip(programs, colors))
 
-        plt.figure(figsize=(13, 5))
+        fig, ax1 = plt.subplots(figsize=(13, 5))
 
         for i, obs in enumerate(self.observations):
             # TODO clean up this part by using existing variables in the obs objects
@@ -431,7 +442,7 @@ class Plan:
             ).alt.deg
 
             # plot the target
-            plt.plot_date(
+            ax1.plot_date(
                 night_time_array,
                 night_altitudes,
                 "-.",
@@ -439,7 +450,7 @@ class Plan:
                 alpha=0.6,
                 linewidth=0.3,
             )
-            plt.plot_date(
+            ax1.plot_date(
                 time_range,
                 altitudes,
                 "-",
@@ -450,13 +461,13 @@ class Plan:
 
         # Plot shaded areas between sunset and civil, nautical, and astronomical evening
         y_range = np.arange(0, 91)
-        plt.fill_betweenx(y_range, sunset.datetime, civil_evening, color="yellow", alpha=0.2)
-        plt.fill_betweenx(y_range, civil_evening, nautical_evening, color="orange", alpha=0.2)
-        plt.fill_betweenx(y_range, nautical_evening, astronomical_evening, color="red", alpha=0.2)
+        ax1.fill_betweenx(y_range, sunset.datetime, civil_evening, color="yellow", alpha=0.2)
+        ax1.fill_betweenx(y_range, civil_evening, nautical_evening, color="orange", alpha=0.2)
+        ax1.fill_betweenx(y_range, nautical_evening, astronomical_evening, color="red", alpha=0.2)
         # Same for the morning
-        plt.fill_betweenx(y_range, civil_morning, sunrise.datetime, color="yellow", alpha=0.2)
-        plt.fill_betweenx(y_range, nautical_morning, civil_morning, color="orange", alpha=0.2)
-        plt.fill_betweenx(y_range, astronomical_morning, nautical_morning, color="red", alpha=0.2)
+        ax1.fill_betweenx(y_range, civil_morning, sunrise.datetime, color="yellow", alpha=0.2)
+        ax1.fill_betweenx(y_range, nautical_morning, civil_morning, color="orange", alpha=0.2)
+        ax1.fill_betweenx(y_range, astronomical_morning, nautical_morning, color="red", alpha=0.2)
         # Add text that have the words "civil", "nautical", and "astronomical".
         # These boxes are placed vertically at the times of each of them (both evening and morning)
         text_kwargs = {
@@ -466,34 +477,34 @@ class Plan:
             "fontsize": 8,
         }
 
-        plt.text(sunset.datetime, 30.5, "Sunset", horizontalalignment="right", **text_kwargs)
-        plt.text(civil_evening, 30.5, "Civil", horizontalalignment="right", **text_kwargs)
-        plt.text(nautical_evening, 30.5, "Nautical", horizontalalignment="right", **text_kwargs)
-        plt.text(
+        ax1.text(sunset.datetime, 30.5, "Sunset", horizontalalignment="right", **text_kwargs)
+        ax1.text(civil_evening, 30.5, "Civil", horizontalalignment="right", **text_kwargs)
+        ax1.text(nautical_evening, 30.5, "Nautical", horizontalalignment="right", **text_kwargs)
+        ax1.text(
             astronomical_evening, 30.5, "Astronomical", horizontalalignment="right", **text_kwargs
         )
-        plt.text(
+        ax1.text(
             (civil_morning + timedelta(minutes=3)),
             30.5,
             "Civil",
             horizontalalignment="left",
             **text_kwargs,
         )
-        plt.text(
+        ax1.text(
             (nautical_morning + timedelta(minutes=3)),
             30.5,
             "Nautical",
             horizontalalignment="left",
             **text_kwargs,
         )
-        plt.text(
+        ax1.text(
             (astronomical_morning + timedelta(minutes=3)),
             30.5,
             "Astronomical",
             horizontalalignment="left",
             **text_kwargs,
         )
-        plt.text(
+        ax1.text(
             (sunrise.datetime + timedelta(minutes=3)),
             30.5,
             "Sunrise",
@@ -503,7 +514,7 @@ class Plan:
 
         # Use DateFormatter to format x-axis to only show time
         time_format = mdates.DateFormatter("%H:%M:%S")
-        plt.gca().xaxis.set_major_formatter(time_format)
+        ax1.xaxis.set_major_formatter(time_format)
 
         # Add a legend at the bottom of the plot to identiy the program colors
         legend_elements = [
@@ -516,13 +527,33 @@ class Plan:
             )
             for prog in programs
         ]
-        plt.legend(handles=legend_elements, loc="lower center", ncol=len(programs))
+        ax1.legend(handles=legend_elements, loc="lower center", ncol=len(programs))
 
         # In the title put the date of the schedule
         plt.title(f"Schedule for the night of {self.observations[0].night.night_date}")
-        plt.xlabel("Time [UTC]")
-        plt.ylabel("Altitude [deg]")
-        plt.ylim(30, 90)
+        ax1.set_xlabel("Time [UTC]")
+        ax1.set_ylabel("Altitude [deg]")
+        ax1.set_ylim(30, 90)
+
+        # Compute altitude in degrees from airmass
+        def airmass_to_altitude(airmass):
+            z_rad = np.arccos(1 / airmass)
+            return 90 - np.degrees(z_rad)
+
+        # Add a second axis to show the airmass
+        # Set up airmass values and compute the corresponding altitudes for those airmass values
+        desired_airmasses = np.arange(1.8, 0.9, -0.1)
+        corresponding_altitudes = airmass_to_altitude(desired_airmasses)
+        corresponding_altitudes[-1] = 90.0
+
+        # Create the secondary y-axis for Airmass
+        ax2 = ax1.twinx()
+        ax2.set_ylim(ax1.get_ylim())
+        # Set y-ticks at computed altitudes for desired airmasses
+        ax2.set_yticks(corresponding_altitudes)
+        ax2.set_yticklabels(np.round(desired_airmasses, 2))  # Display the desired airmass values
+        ax2.set_ylabel("Airmass")
+        ax2.tick_params("y")
         if save:
             plt.tight_layout()
             plt.savefig(f"night_schedule_{self.observations[0].night.night_date}.png", dpi=300)

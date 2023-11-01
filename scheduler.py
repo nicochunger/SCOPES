@@ -368,7 +368,6 @@ class BeamSearchPlanner:
 
             # If PQ_current is empty, move top-K from PQ_next to PQ_current
             if PQ_current.empty():
-                print(f"Went through the {self.depth} level")
                 # print(f"Current best plan: {best_current_plan}")
                 self.depth += 1
                 # Put top-K plans in the PQ_current queue
