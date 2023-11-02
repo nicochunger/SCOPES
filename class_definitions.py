@@ -369,9 +369,9 @@ class Plan:
             first_obs.night.obs_within_limits[1] - first_obs.night.obs_within_limits[0]
         )
         unused_time = available_obs_time - observation_time - overhead_time
-        self.observation_time = (observation_time * u.day).to(u.hour)
-        self.overhead_time = (overhead_time * u.day).to(u.hour)
-        self.unused_time = (unused_time * u.day).to(u.hour)
+        self.observation_time = TimeDelta(observation_time * u.day).to_datetime()
+        self.overhead_time = TimeDelta(overhead_time * u.day).to_datetime()
+        self.unused_time = TimeDelta(unused_time * u.day).to_datetime()
         self.overhead_ratio = overhead_time / observation_time
         self.observation_ratio = observation_time / available_obs_time
 
@@ -390,9 +390,9 @@ class Plan:
         print(f"Length = {len(self)}")
         print(f"Score = {self.score:.6f}")
         print(f"Evaluation = {self.evaluation:.6f}")
-        print(f"Overhead time = {self.overhead_time:.5f}")
+        print(f"Overhead time = {self.overhead_time}")
         print(f"Overhead ratio = {self.overhead_ratio:.5f}")
-        print(f"Observation time = {self.observation_time:.5f}")
+        print(f"Observation time = {self.observation_time}")
         print(f"Observation ratio = {self.observation_ratio:.5f}")
 
     def plot(self, save: bool = False):
@@ -562,11 +562,21 @@ class Plan:
         return len(self.observations)
 
     def __str__(self):
-        lines = [
-            "Plan(",
-            f"     Score: {self.score},",
-            "     Observations: ",
-            f"         {self.observations})",
-        ]
+        lines = []
+        lines.append(
+            f"Plan for the night of {self.observations[0].night.night_date} (Times in UTC)"
+        )
+        lines.append("--------------------------------------------------\n")
+        lines.append(" #      Program ID      Target          Start time   (Exp time)")
+        for i, obs in enumerate(self.observations):
+            start_time = Time(obs.start_time, format="jd").datetime
+            exp_time = TimeDelta(obs.exposure_time * u.day).to_datetime()
+            string = f"{i+1:2}:"
+            string += f"\t{obs.target.program.instrument}"
+            string += f"\t{obs.target.program.progID}"
+            string += f"\t{obs.target.name:<15}"
+            string += f"\t{start_time.strftime('%H:%M:%S')}"
+            string += f"     ({exp_time})"
+            lines.append(string)
 
         return "\n".join(lines)
