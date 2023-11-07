@@ -18,7 +18,7 @@ lasilla = Observer.at_site("lasilla")
 
 
 class Night:
-    def __init__(self, night_date: date, observations_within: str, observer: Observer = lasilla):
+    def __init__(self, night_date: date, observations_within: str, observer: Observer):
         # How to calculate which night to take from the input time?
         # For now just take the night of the input time
         self.night_date = night_date
@@ -27,18 +27,22 @@ class Night:
             datetime.combine(self.night_date, datetime.min.time()) + timedelta(days=1, hours=4)
         )
         self.sunset = self.observer.sun_set_time(self.midnight, which="previous")
-        self.sunrise = lasilla.sun_rise_time(self.midnight, which="next")
+        self.sunrise = self.observer.sun_rise_time(self.midnight, which="next")
 
         # Get the times for the different twilights
-        self.civil_evening = lasilla.twilight_evening_civil(self.midnight, which="previous")
-        self.nautical_evening = lasilla.twilight_evening_nautical(self.midnight, which="previous")
-        self.astronomical_evening = lasilla.twilight_evening_astronomical(
+        self.civil_evening = self.observer.twilight_evening_civil(self.midnight, which="previous")
+        self.nautical_evening = self.observer.twilight_evening_nautical(
+            self.midnight, which="previous"
+        )
+        self.astronomical_evening = self.observer.twilight_evening_astronomical(
             self.midnight, which="previous"
         )
         # And the same for the morning
-        self.civil_morning = lasilla.twilight_morning_civil(self.midnight, which="next")
-        self.nautical_morning = lasilla.twilight_morning_nautical(self.midnight, which="next")
-        self.astronomical_morning = lasilla.twilight_morning_astronomical(
+        self.civil_morning = self.observer.twilight_morning_civil(self.midnight, which="next")
+        self.nautical_morning = self.observer.twilight_morning_nautical(
+            self.midnight, which="next"
+        )
+        self.astronomical_morning = self.observer.twilight_morning_astronomical(
             self.midnight, which="next"
         )
         # Time ranges for the different twilights
@@ -152,7 +156,8 @@ class Target:
         self.dec_deg = coords.dec.deg
         self.last_obs = last_obs.jd
         self.priority = self.renormalize_priority(priority)
-        self.efficiency_merits: List[Merit] = []  # List of all merits
+        self.fairness_merits: List[Merit] = []  # List of all fairness merits
+        self.efficiency_merits: List[Merit] = []  # List of all efficiency merits
         self.veto_merits: List[Merit] = []  # List to store veto merits
 
     def add_merit(self, merit: Merit):
@@ -187,25 +192,23 @@ class Observation:
         start_time: Time,
         exposure_time: TimeDelta,
         night: Night,
-        observer: Observer = lasilla,
     ):
         self.target = target
         self.start_time = start_time.jd
         self.exposure_time = exposure_time.value
         self.end_time = self.start_time + self.exposure_time
         self.night = night
-        self.observer = observer  # Observer location
         self.score: float = 0.0  # Initialize score to zero
         self.veto_merits: List[float] = []  # List to store veto merits
-        # self.time_array: Time = None
         self.unique_id = uuid.uuid4()
+        self.fairness_value = self.fairness()
 
         night_time_range = self.night.night_time_range
         self.night_time_range_jd = night_time_range.value
 
         # Create the AltAz frame for the observation during the night
         self.night_altaz_frame = self.target.coords.transform_to(
-            self.observer.altaz(time=night_time_range)
+            self.night.observer.altaz(time=night_time_range)
         )
         # Get the altitudes and airmasses of the target during the night
         self.night_altitudes = self.night_altaz_frame.alt.deg
@@ -223,10 +226,10 @@ class Observation:
         self.max_altitude = min(self.night_altitudes.max(), tel_alt_upper_lim)
 
         # Figure out the rise and set times for this target
-        nearest_rise_time = observer.target_rise_time(
+        nearest_rise_time = self.night.observer.target_rise_time(
             start_time, self.target.coords, horizon=tel_alt_lower_lim * u.deg, which="nearest"
         ).jd
-        nearest_set_time = observer.target_set_time(
+        nearest_set_time = self.night.observer.target_set_time(
             start_time, self.target.coords, horizon=tel_alt_lower_lim * u.deg, which="nearest"
         ).jd
         # Calculate timedelta between the start time and the nearest rise and set times
@@ -235,15 +238,23 @@ class Observation:
         if rise_timedelta < set_timedelta:
             # If the rise time is closer than the set time, then the target is rising
             self.rise_time = nearest_rise_time
-            self.set_time = observer.target_set_time(
+            self.set_time = self.night.observer.target_set_time(
                 start_time, self.target.coords, horizon=tel_alt_lower_lim * u.deg, which="next"
             ).jd
         elif set_timedelta < rise_timedelta:
             # If the set time is closer than the rise time, then the target already set
-            self.rise_time = observer.target_rise_time(
+            self.rise_time = self.night.observer.target_rise_time(
                 start_time, self.target.coords, horizon=tel_alt_lower_lim * u.deg, which="previous"
             ).jd
             self.set_time = nearest_set_time
+
+    def fairness(self) -> float:
+        # TODO Implement the fairness
+        # fairness_value = self.target.priority * np.prod(
+        #     [merit.evaluate() for merit in self.target.fairness_merits]
+        # )
+        fairness_value = 1.0
+        return fairness_value  # type: ignore
 
     def update_alt_airmass(self):
         # Find indices
@@ -429,7 +440,9 @@ class Plan:
             time_range = Time(
                 np.linspace(obs.start_time, (obs.start_time + obs.exposure_time), 20), format="jd"
             ).datetime
-            altitudes = obs.target.coords.transform_to(lasilla.altaz(time=time_range)).alt.deg
+            altitudes = obs.target.coords.transform_to(
+                night.observer.altaz(time=time_range)
+            ).alt.deg
             # Generate an array of equally spaced Julian Dates
             num_points = 300  # The number of points you want
             jd_array = np.linspace(sunset.jd, sunrise.jd, num_points)
@@ -438,7 +451,7 @@ class Plan:
             night_time_array = Time(jd_array, format="jd", scale="utc").datetime
 
             night_altitudes = obs.target.coords.transform_to(
-                lasilla.altaz(time=night_time_array)
+                night.observer.altaz(time=night_time_array)
             ).alt.deg
 
             # plot the target
@@ -536,15 +549,18 @@ class Plan:
         ax1.set_ylim(30, 90)
 
         # Compute altitude in degrees from airmass
-        def airmass_to_altitude(airmass):
-            z_rad = np.arccos(1 / airmass)
-            return 90 - np.degrees(z_rad)
+        # def airmass_to_altitude(airmass):
+        #     if airmass == 1.0:
+        #         return 90.0
+        #     else:
+        #         z_rad = np.arccos(1 / airmass)
+        #         return 90 - np.degrees(z_rad)
 
         # Add a second axis to show the airmass
         # Set up airmass values and compute the corresponding altitudes for those airmass values
         desired_airmasses = np.arange(1.8, 0.9, -0.1)
-        corresponding_altitudes = airmass_to_altitude(desired_airmasses)
-        corresponding_altitudes[-1] = 90.0
+        corresponding_altitudes = list(90.0 - np.degrees(np.arccos(1.0 / desired_airmasses[:-1])))
+        corresponding_altitudes.append(90.0)
 
         # Create the secondary y-axis for Airmass
         ax2 = ax1.twinx()
