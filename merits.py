@@ -8,6 +8,29 @@ import config
 from class_definitions import Observation
 
 
+def time_share(observation: Observation, alpha: int = 3, beta: float = 1.0) -> float:
+    """Time share fairness merit. It uses a sigmoid function to calculate the merit.
+    The specific shape can be set with the parameters alpha and beta. The exact formula is:
+    1/(1+exp(-((pct_diff/(2*beta))^alpha)))
+
+    Parameters:
+        observation: (Observation)
+            The Observation object to be used
+        alpha: (float)
+            The attack parameter for how sharp the sigmoid is
+        beta: (float)
+            The leeway parameter for how much difference in time share is allowed
+    """
+    assert beta > 0.0, "beta for time_share merit must be greater than 0"
+    assert alpha > 0, "alpha for time_share merit must be greater than 0"
+    assert alpha % 2 == 1, "alpha for time_share merit must be an odd positive integer"
+    # Calculate the time share of the observation
+    pct_diff = observation.target.program.time_share_pct_diff
+    # Calculate the merit
+    m = 1 / (1 + np.exp(-((pct_diff / (2 * beta)) ** alpha)))
+    return m
+
+
 def at_night(observation: Observation) -> float:
     """Merit function that returns 1 if the observation is at night, 0 otherwise"""
     start_time = observation.start_time
@@ -32,7 +55,7 @@ def airmass(observation: Observation, max: float) -> float:
     try:
         max_airmass = observation.obs_airmasses.max()
         return max_airmass < max
-    except:
+    except ValueError:
         return 0.0
 
 
