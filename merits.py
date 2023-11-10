@@ -8,10 +8,17 @@ import config
 from class_definitions import Observation
 
 
-def time_share(observation: Observation, alpha: int = 3, beta: float = 1.0) -> float:
-    """Time share fairness merit. It uses a sigmoid function to calculate the merit.
+def time_share(observation: Observation, alpha: int = 5, beta: float = 5.0) -> float:
+    """
+    Time share fairness merit. It uses a modified sigmoid function to calculate the merit.
     The specific shape can be set with the parameters alpha and beta. The exact formula is:
-    1/(1+exp(-((pct_diff/(2*beta))^alpha)))
+
+    0.5 + (1 / (1 + exp((pct_diff/beta)^alpha)))
+
+    It's shaped in a way so that there is some permissiveness. This means that a program
+    can be over or under the allocated time by a certain percentage before its priority is decreased
+    or increased. The alpha parameter controls how sharp the sigmoid is, and the beta parameter
+    controls how much difference is allowed (in percentage).
 
     Parameters:
         observation: (Observation)
@@ -19,7 +26,7 @@ def time_share(observation: Observation, alpha: int = 3, beta: float = 1.0) -> f
         alpha: (float)
             The attack parameter for how sharp the sigmoid is
         beta: (float)
-            The leeway parameter for how much difference in time share is allowed
+            The leeway parameter for how much difference in time use is allowed
     """
     assert beta > 0.0, "beta for time_share merit must be greater than 0"
     assert alpha > 0, "alpha for time_share merit must be greater than 0"
@@ -27,7 +34,7 @@ def time_share(observation: Observation, alpha: int = 3, beta: float = 1.0) -> f
     # Calculate the time share of the observation
     pct_diff = observation.target.program.time_share_pct_diff
     # Calculate the merit
-    m = 1 / (1 + np.exp(-((pct_diff / (2 * beta)) ** alpha)))
+    m = 0.5 + (1 / (1 + np.exp(((pct_diff / beta) ** alpha))))
     return m
 
 
@@ -52,11 +59,11 @@ def airmass(observation: Observation, max: float) -> float:
     # TODO Implement the hyperbolic tangent function so that there is some leeway in the airmass
     """
     # Claculate airmass throughout the exposure of the observation
-    try:
+    if len(observation.obs_airmasses) == 0:
+        return 0.0
+    else:
         max_airmass = observation.obs_airmasses.max()
         return max_airmass < max
-    except ValueError:
-        return 0.0
 
 
 def altitude(
@@ -160,6 +167,51 @@ def cadence(
         return 0.5 + (pct_overdue / (50 * alpha)) ** beta
 
 
+def periodic_gaussian(
+    observation: Observation,
+    epoch: float,
+    period: float,
+    sigma: float,
+    phases: list = [0.0],
+    verbose: bool = False,
+) -> float:
+    """
+    Periodic Gaussian merit function.
+
+    Analytic expression: exp(-0.5(sin(2pi(x-epoch)/period)/s)^2)
+
+    The introduction of the sine function breaks the traditional meaning of the standard deviation.
+    So the s parameter will have to be finetuned depending on the period.
+
+    Parameters
+    ----------
+    x : float
+        The x value at which to evaluate the merit function.
+    epoch : float
+        Where the peak of the merit will be centered
+    period : float
+        The period of the Gaussian.
+    sigma : float
+        Measure of the width of each Gaussian.
+    phases : list
+        List of phases at which the gaussians should peak.
+    """
+    merit = 0.0
+    for phase in phases:
+        merit += np.exp(
+            -0.5
+            * (
+                np.sin(np.pi * (observation.start_time - (epoch + phase * period)) / period)
+                / sigma
+            )
+            ** 2
+        )
+    if verbose:
+        print(f"current phase = {((observation.start_time - epoch) % period) / period}")
+        print(f"{merit = }")
+    return merit
+
+
 # def moon_distance(observation: Observation, min: float = 30.0) -> float:
 #     """Moon distance constraint merit function"""
 # Create the AltAz frame for the moon
@@ -210,30 +262,6 @@ def gaussian(x, x0, P, s):
     """
 
     return np.exp(-0.5 * (x / P) ** 2 / s**2)
-
-
-def periodic_gaussian(x, x0, P, s):
-    """
-    Periodic Gaussian merit function.
-
-    Analytic expression: exp(-0.5(sin(2pi(x-x0)/P)/s)^2)
-
-    The introduction of the sine function breaks the traditional meaning of the standard deviation. So the
-    s parameter will have to be finetuned depending on the period.
-
-    Parameters
-    ----------
-    x : float
-        The x value at which to evaluate the merit function.
-    x0 : float
-        Where the peak of the merit will be centered
-    P : float
-        The period of the Gaussian.
-    s : float
-        Measure of the width of each Gaussian.
-    """
-
-    return np.exp(-0.5 * (np.sin(2 * np.pi * (x - x0) / P) / s) ** 2)
 
 
 def periodic_box(x, x0, P, width):
