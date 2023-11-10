@@ -29,7 +29,7 @@ def load_program(file, prog, merit_list, pct_keep=0.9):
     for _, tar in cat_mod.iterrows():
         tar_coords = tar["coordinates (DACE)"].split(" / ")
         skycoord = SkyCoord(tar_coords[0], tar_coords[1], unit=(u.hourangle, u.deg))
-        last_obs = Time(tar["last_obs"] + 2_400_000, format="jd")
+        last_obs = Time(tar["last_obs"] + 2_400_000, format="jd").jd
         # last_obs = start_datetime - TimeDelta(5*u.day)
         target = Target(
             tar["catalog name"],
@@ -38,15 +38,6 @@ def load_program(file, prog, merit_list, pct_keep=0.9):
             last_obs=last_obs,
             priority=tar["priority"],
         )
-        # Create custom cadence merit as the cadence is can be different for each target
-        # cadence_merit = Merit(
-        #     "Cadence",
-        #     merits.cadence,
-        #     merit_type="efficiency",
-        #     parameters={"delay": TimeDelta(tar["cadence [d]"] * u.day), "alpha": 0.05},
-        # )
-        # parameters={"delay": TimeDelta(3*u.day), "alpha":0.05})
-        # merits_copy.append(cadence_merit)
         for merit in merits_copy:
             target.add_merit(merit)
 
