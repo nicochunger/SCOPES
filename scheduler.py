@@ -52,7 +52,33 @@ def update_start_from_prev(observations: List[Observation], previous_obs: Observ
 ## ----- SCHEDULERS ----- ##
 
 
-class generateQ:
+class Scheduler:
+    def obslist_deepcopy(self, obslist):
+        """
+        An implementation of deepcoping a list of observations by creating new emtpy observations
+        and assigning the attributes of the original observations to the new ones.
+        """
+        new_obslist = []
+        for obs in obslist:
+            new_obs = Observation.__new__(Observation)
+            new_obs.__dict__ = obs.__dict__.copy()
+            new_obslist.append(new_obs)
+        return new_obslist
+
+    def update_start_times(self, observations: List[Observation], new_start_time: float):
+        """Update the start time of all observations in the list based on the previous observation."""
+        for obs in observations:
+            obs.start_time = new_start_time
+            obs.end_time = obs.start_time + obs.exposure_time
+            obs.update_alt_airmass()
+
+    def update_start_from_prev(self, observations: List[Observation], previous_obs: Observation):
+        """Update the start time of all observations in the list based on the previous observation."""
+        for obs in observations:
+            obs.update_start_time(previous_obs)
+
+
+class generateQ(Scheduler):
     def __init__(self, plan_start_time: float = None):
         self.plan_start_time = plan_start_time
 
@@ -81,12 +107,10 @@ class generateQ:
         observation_plan = Plan()
         if isinstance(start_obs, Observation):
             observation_plan.add_observation(start_obs)
-            update_start_from_prev(available_obs, start_obs)
+            self.update_start_from_prev(available_obs, start_obs)
         elif isinstance(start_obs, float):
-            for obs in available_obs:
-                obs.start_time = start_obs
-                obs.end_time = obs.start_time + obs.exposure_time
-                obs.update_alt_airmass()
+            self.update_start_times(available_obs, start_obs)
+
         else:
             raise TypeError(
                 f"start_obs must be of type Observation or Time (as a float in jd), not {type(start_obs)}"
@@ -124,14 +148,14 @@ class generateQ:
                 available_obs.remove(o_double_prime)
 
                 # Update the start time of all remaining observations
-                update_start_from_prev(available_obs, o_double_prime)
+                self.update_start_from_prev(available_obs, o_double_prime)
 
         # Evaluate the plan before returning
         observation_plan.evaluate_plan()
 
         return observation_plan
 
-    def generateQ(self, available_obs: List[Observation], max_plan_length=None, K: int = 5):
+    def run(self, available_obs: List[Observation], max_plan_length=None, K: int = 5):
         """
         Create a plan from a list of obsevations and a starting time. The way it works is by using
         the forwardP function to generate a plan from the starting time to the end of the night
@@ -146,7 +170,7 @@ class generateQ:
         remaining_obs = obslist_deepcopy(available_obs)
         # Check if there is a plan start time
         if self.plan_start_time:
-            update_start_times(remaining_obs, self.plan_start_time)
+            self.update_start_times(remaining_obs, self.plan_start_time)
         else:
             raise ValueError("Plan start time must be specified")
         # Check max_plan_length
@@ -200,7 +224,7 @@ class generateQ:
                 final_plan.add_observation(best_observation)
                 # Remove the best observation from the available observations list
                 remaining_obs.remove(best_observation)
-                update_start_from_prev(remaining_obs, best_observation)
+                self.update_start_from_prev(remaining_obs, best_observation)
 
         # Evaluate the final plan
         final_plan.evaluate_plan()
@@ -307,7 +331,7 @@ class BeamSearchPlanner:
         plan: Any = field(compare=False)
         obs: Any = field(compare=False)
 
-    def dp_beam_search(
+    def run(
         self, initial_observations: List[Observation], max_plan_length: int = None, K: int = 5
     ) -> Plan:
         # Check if there is a plan start time
