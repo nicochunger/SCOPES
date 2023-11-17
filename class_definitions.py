@@ -98,12 +98,15 @@ class Program:
         self.time_share_current = 0.0
         self.time_share_pct_diff = 0.0
 
-    def update_time_share(self):
+    def update_time_share(self, current_timeshare: float):
         # Function that retrieves the current time used by the program
-        # TODO: Implement the retrieval of current time shares
+        self.time_share_current = current_timeshare
         self.time_share_pct_diff = (
             self.time_share_current - self.time_share_allocated
         ) / self.time_share_allocated
+
+    def __str__(self) -> str:
+        print(f"Program({self.progID}, {self.instrument}, {self.time_share_allocated})")
 
 
 class Merit:
@@ -162,13 +165,16 @@ class Merit:
 
 
 class Target:
-    def __init__(self, name: str, prog: Program, coords: SkyCoord, last_obs: float, priority: int):
+    def __init__(
+        self, name: str, prog: Program, coords: SkyCoord, priority: int, exposure_time: float
+    ):
         self.name = name
         self.program = prog
         self.coords = coords
         self.ra_deg = coords.ra.deg
         self.dec_deg = coords.dec.deg
-        self.last_obs = last_obs  # in Julian Date
+        self.exposure_time = exposure_time
+        # self.last_obs = last_obs  # in Julian Date
         self.priority = self.renormalize_priority(priority)
         self.fairness_merits: List[Merit] = []  # List of all fairness merits
         self.efficiency_merits: List[Merit] = []  # List of all efficiency merits
@@ -197,8 +203,8 @@ class Target:
         lines = [
             f"Target(Name: {self.name},",
             f"       Program: {self.program.progID},",
-            f"       Coordinates: {self.coords},",
-            f"       Last observation: {self.last_obs},",
+            f"       Coordinates: ({self.coords.ra.deg:.3f}, {self.coords.dec.deg:.3f}),",
+            # f"       Last observation: {self.last_obs},",
             f"       Priority: {self.priority},",
             f"       Fairness Merits: {self.fairness_merits},",
             f"       Veto Merits: {self.veto_merits},",
@@ -207,18 +213,21 @@ class Target:
 
         return "\n".join(lines)
 
+    def __repr__(self) -> str:
+        return self.__str__()
+
 
 class Observation:
     def __init__(
         self,
         target: Target,
-        start_time: Time,
-        exposure_time: TimeDelta,
+        start_time: float,
+        exposure_time: float,
         night: Night,
     ):
         self.target = target
-        self.start_time = start_time.jd
-        self.exposure_time = exposure_time.value
+        self.start_time = start_time
+        self.exposure_time = exposure_time
         self.end_time = self.start_time + self.exposure_time
         self.night = night
         self.score: float = 0.0  # Initialize score to zero
@@ -245,34 +254,46 @@ class Observation:
         # Get the maximum altitude of the target during the night
         self.max_altitude = min(self.night_altitudes.max(), tel_alt_upper_lim)
 
-        # Figure out the rise and set times for this target
-        nearest_rise_time = self.night.observer.target_rise_time(
-            start_time, self.target.coords, horizon=tel_alt_lower_lim * u.deg, which="nearest"
-        ).jd
-        nearest_set_time = self.night.observer.target_set_time(
-            start_time, self.target.coords, horizon=tel_alt_lower_lim * u.deg, which="nearest"
-        ).jd
-        # Calculate timedelta between the start time and the nearest rise and set times
-        rise_timedelta = abs(nearest_rise_time - self.start_time)
-        set_timedelta = abs(nearest_set_time - self.start_time)
-        if rise_timedelta < set_timedelta:
-            # If the rise time is closer than the set time, then the target is rising
-            self.rise_time = nearest_rise_time
-            self.set_time = self.night.observer.target_set_time(
-                start_time, self.target.coords, horizon=tel_alt_lower_lim * u.deg, which="next"
-            ).jd
-        elif set_timedelta < rise_timedelta:
-            # If the set time is closer than the rise time, then the target already set
+        start_time_astropy = Time(self.night.obs_within_limits[0], format="jd")
+        start_time_astropy = self.night.night_time_range[0]
+        if self.night_altitudes[0] > tel_alt_lower_lim:
+            # If the target is already up by night start, the rise time is "previous"
             self.rise_time = self.night.observer.target_rise_time(
-                start_time, self.target.coords, horizon=tel_alt_lower_lim * u.deg, which="previous"
+                start_time_astropy,
+                self.target.coords,
+                horizon=tel_alt_lower_lim * u.deg,
+                which="previous",
+                n_grid_points=10,
             ).jd
-            self.set_time = nearest_set_time
+            # and set time is "next"
+            self.set_time = self.night.observer.target_set_time(
+                start_time_astropy,
+                self.target.coords,
+                horizon=tel_alt_lower_lim * u.deg,
+                which="next",
+                n_grid_points=10,
+            ).jd
+        else:
+            # If the target is not up by night start, the rise time is "next"
+            self.rise_time = self.night.observer.target_rise_time(
+                start_time_astropy,
+                self.target.coords,
+                horizon=tel_alt_lower_lim * u.deg,
+                which="next",
+                n_grid_points=10,
+            ).jd
+            # and set time is also "next"
+            self.set_time = self.night.observer.target_set_time(
+                start_time_astropy,
+                self.target.coords,
+                horizon=tel_alt_lower_lim * u.deg,
+                which="next",
+                n_grid_points=10,
+            ).jd
 
     def fairness(self) -> float:
         # TODO Implement the fairness
-        # fairness_value = self.target.priority * np.prod(
-        #     [merit.evaluate() for merit in self.target.fairness_merits]
-        # )
+        # fairness_value = np.prod([merit.evaluate() for merit in self.target.fairness_merits])
         fairness_value = 1.0
         return fairness_value  # type: ignore
 
@@ -335,9 +356,7 @@ class Observation:
 
         # --- Fairness ---
         # Balances time allocation and priority
-        # TODO Implement the fairness
-        # fairness = self.target.priority
-        fairness = 1.0
+        fairness = self.fairness_value
 
         # --- Sensibility ---
         # Veto merits that check for observatbility
@@ -433,7 +452,7 @@ class Plan:
         print(f"Observation time = {self.observation_time}")
         print(f"Observation ratio = {self.observation_ratio:.5f}")
 
-    def plot(self, save: bool = False):
+    def plot(self, display: bool = True, save: bool = False, path: str = None):
         """Plot the schedule for the night."""
         first_obs = self.observations[0]
 
@@ -592,9 +611,16 @@ class Plan:
         ax2.tick_params("y")
         if save:
             plt.tight_layout()
-            plt.savefig(f"night_schedule_{self.observations[0].night.night_date}.png", dpi=300)
+            if path is None:
+                raise ValueError("Path must be specified if save is True")
+            else:
+                plt.savefig(path, dpi=300)
+        if display:
+            plt.show()
+        else:
+            plt.close()
 
-    def plot_interactive(self, save: bool = False):
+    def plot_interactive(self, save: bool = False, path: str = None):
         """Plot the schedule for the night using Plotly."""
         first_obs = self.observations[0]
 
@@ -771,16 +797,14 @@ class Plan:
 
         # Saving the plot if requested
         if save:
-            fig.write_image(
-                f"night_schedule_{self.observations[0].night.night_date}.png", format="png"
-            )
+            if path is None:
+                raise ValueError("Path must be specified if save is True")
+            else:
+                fig.write_image(path, format="png")
 
         fig.show()
 
-    def __len__(self):
-        return len(self.observations)
-
-    def __str__(self):
+    def print_plan(self, save: bool = False, path: str = None):
         lines = []
         lines.append(
             f"Plan for the night of {self.observations[0].night.night_date} (Times in UTC)"
@@ -791,11 +815,23 @@ class Plan:
             start_time = Time(obs.start_time, format="jd").datetime
             exp_time = TimeDelta(obs.exposure_time * u.day).to_datetime()
             string = f"{i+1:2}:"
-            string += f"\t{obs.target.program.instrument}"
-            string += f"\t{obs.target.program.progID}"
+            string += f"\t{obs.target.program.progID}{obs.target.program.instrument}"
             string += f"\t{obs.target.name:<20}"
             string += f"\t{start_time.strftime('%H:%M:%S')}"
             string += f"     ({exp_time})"
             lines.append(string)
+        plan_txt = "\n".join(lines)
+        if save:
+            if path is None:
+                raise ValueError("Path must be specified if save is True")
+            else:
+                with open(path, "w") as f:
+                    f.write(plan_txt)
 
-        return "\n".join(lines)
+        return plan_txt
+
+    def __len__(self):
+        return len(self.observations)
+
+    def __str__(self):
+        return self.print_plan(save=False)
