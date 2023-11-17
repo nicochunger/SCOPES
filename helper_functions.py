@@ -29,13 +29,14 @@ def load_program(file, prog, merit_list, pct_keep=0.9):
     for _, tar in cat_mod.iterrows():
         tar_coords = tar["coordinates (DACE)"].split(" / ")
         skycoord = SkyCoord(tar_coords[0], tar_coords[1], unit=(u.hourangle, u.deg))
-        last_obs = Time(tar["last_obs"] + 2_400_000, format="jd").jd
+        # last_obs = Time(tar["last_obs"] + 2_400_000, format="jd").jd
         # last_obs = start_datetime - TimeDelta(5*u.day)
         target = Target(
             tar["catalog name"],
             prog,
             coords=skycoord,
-            last_obs=last_obs,
+            # last_obs=last_obs,
+            exposure_time=0.002,
             priority=tar["priority"],
         )
         for merit in merits_copy:
