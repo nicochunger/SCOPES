@@ -71,14 +71,58 @@ class Night:
         if self.observations_within not in valid_options:
             raise ValueError(f"observations_within must be one of {valid_options}")
         if self.observations_within == "civil":
-            self.obs_within_limits = [self.civil_evening, self.civil_morning]
+            self.obs_within_limits = np.array([self.civil_evening, self.civil_morning])
             self.night_time_range = self.time_range_civil
         elif self.observations_within == "nautical":
-            self.obs_within_limits = [self.nautical_evening, self.nautical_morning]
+            self.obs_within_limits = np.array([self.nautical_evening, self.nautical_morning])
             self.night_time_range = self.time_range_nautical
         elif self.observations_within == "astronomical":
-            self.obs_within_limits = [self.astronomical_evening, self.astronomical_morning]
+            self.obs_within_limits = np.array(
+                [self.astronomical_evening, self.astronomical_morning]
+            )
             self.night_time_range = self.time_range_astronomical
+
+        # Calculate allowed culmination times for the night
+        # FOR NOW: I will calculate this very simply by saying that allowed targets are those that
+        # culminate within the night time range +- 3 hours
+        offsets = np.array([-3, 3]) / 24  # in days
+        self.culmination_window = self.obs_within_limits + offsets
+
+    def mapping(self, time: float) -> float:
+        """
+        Function that maps observable culmination time range to the actual observable night time range.
+
+        Paramteres:
+        time: float
+            The culmination time of the target in Julian Date
+
+        Returns:
+        mapped_time: float
+            The mapped time in Julian Date
+        """
+        time_prop = (time - self.culmination_window[0]) / (
+            self.culmination_window[1] - self.culmination_window[0]
+        )
+        mapped_time = self.obs_within_limits[0] + time_prop * (
+            self.obs_within_limits[1] - self.obs_within_limits[0]
+        )
+        return mapped_time
+
+    def __str__(self):
+        lines = [
+            f"Night(Date: {self.night_date},",
+            f"      Sunset: {self.sunset},",
+            f"      Sunrise: {self.sunrise},",
+            f"      Civil evening: {self.civil_evening},",
+            f"      Nautical evening: {self.nautical_evening},",
+            f"      Astronomical evening: {self.astronomical_evening},",
+            f"      Civil morning: {self.civil_morning},",
+            f"      Nautical morning: {self.nautical_morning},",
+            f"      Astronomical morning: {self.astronomical_morning},",
+            f"      Observations within: '{self.observations_within}')",
+        ]
+
+        return "\n".join(lines)
 
 
 class Program:
@@ -253,6 +297,8 @@ class Observation:
         self.min_altitude = max(self.night_altitudes.min(), tel_alt_lower_lim)
         # Get the maximum altitude of the target during the night
         self.max_altitude = min(self.night_altitudes.max(), tel_alt_upper_lim)
+        # Get time of maximum altitude
+        self.culmination_time = self.night.night_time_range[np.argmax(self.night_altitudes)].jd
 
         start_time_astropy = Time(self.night.obs_within_limits[0], format="jd")
         start_time_astropy = self.night.night_time_range[0]
@@ -810,15 +856,18 @@ class Plan:
             f"Plan for the night of {self.observations[0].night.night_date} (Times in UTC)"
         )
         lines.append("--------------------------------------------------\n")
-        lines.append(" #      Program ID      Target                  Start time   (Exp time)")
+        # lines.append(" #      Program ID      Target                  Start time   (Exp time)")
+        lines.append(
+            f"{'#':<6}{'Program ID':<12}{'Target':<20}{'Start time':<13}{'(Exp time)':<10}"
+        )
         for i, obs in enumerate(self.observations):
             start_time = Time(obs.start_time, format="jd").datetime
             exp_time = TimeDelta(obs.exposure_time * u.day).to_datetime()
-            string = f"{i+1:2}:"
-            string += f"\t{obs.target.program.progID}{obs.target.program.instrument}"
-            string += f"\t{obs.target.name:<20}"
-            string += f"\t{start_time.strftime('%H:%M:%S')}"
-            string += f"     ({exp_time})"
+            string = f"{f'{i+1:>2}:':<6}"
+            string += f"{f'{obs.target.program.progID} {obs.target.program.instrument}':<12}"
+            string += f"{obs.target.name:<20}"
+            string += f"{start_time.strftime('%H:%M:%S'):<13}"
+            string += f"{f'({exp_time})':<10}"
             lines.append(string)
         plan_txt = "\n".join(lines)
         if save:

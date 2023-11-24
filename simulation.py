@@ -37,8 +37,9 @@ class Simulation:
             Merit("Airmass", merits.airmass, merit_type="veto", parameters={"max": 1.8}),
             Merit("Altitude", merits.altitude, merit_type="veto"),
             Merit("AtNight", merits.at_night, merit_type="veto"),
-            Merit("Culmination", merits.culmination, merit_type="efficiency"),
-            Merit("Egress", merits.egress, merit_type="efficiency"),
+            # Merit("Culmination", merits.culmination, merit_type="efficiency"),
+            Merit("CulMapping", merits.culmination_mapping, merit_type="efficiency"),
+            # Merit("Egress", merits.egress, merit_type="efficiency"),
             Merit("TimeShare", merits.time_share, merit_type="fairness"),
         ]
         self.nights = []
@@ -81,7 +82,7 @@ class Simulation:
             if "period" in tar.index:
                 # Remove the culmination and egress merit
                 merit_list.pop(3)
-                merit_list.pop(4)
+                # merit_list.pop(4)
                 # Add the PhaseSpecific merit
                 phases = []
                 if tar["phase1"] > 0:

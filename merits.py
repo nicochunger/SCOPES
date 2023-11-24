@@ -2,8 +2,8 @@
 
 # import astropy.units as u
 import numpy as np
-from astropy.time import TimeDelta
 
+# from astropy.time import TimeDelta
 import config
 from class_definitions import Observation
 
@@ -162,39 +162,52 @@ def rise_set(observation: Observation, verbose: bool = False) -> float:
 
 def culmination_mapping(observation: Observation, verbose: bool = False) -> float:
     """
-    For now I'm calling this culmination mapping, but I have to think of a better name.
-    This is a modified version of the culmination merit. The idea is that you don't want to optimize
-    only for pure culimination (where the target is at its highest point in the sky), but also for
-    the targets that are rising and setting and thus never reach their culimination point during
-    the night. The current problem is that a target that is setting, will only have a high culmination
-    score at the very start of the night, and then only goes down for any later time. So it will
-    rarely be selected. This merit function tries to fix that by instead of calculating the merit
-    centered at the true physical culmination point, it maps all possible culmination points where
-    a target would still be observable during the night (i.e. where the target is above the altitude
-    limit), and then maps these to the range of times within the actual observation window.
-    This way, a target that is setting will have a high merit at the start of the night, and then
-    the merit will decrease as the target sets. But it will still have a high merit at the start
-    of the night, and so it will be selected more often.
-    A target that actuallu reaches the culmination at the beginning of the night, would peak in this
-    merit a bit later in the night. In the middle of the night, the true culmination will match with
-    this mapped version of the culmination. And at the end of the night this modified merit will peak
-    just a bit before the true culmination point of the target. This means that in the first hald
-    of the night targets will be observed always a bit after their culmination. In the middle of the
-    night they will be observed around the peak, and at the end of the night targets will be observed
-    a bit before their culmination.
+    I'm tentatively calling this method "culmination mapping," though I'm still brainstorming a
+    better name. It's a twist on the usual culmination merit concept. The key here is not just
+    focusing on targets at their highest sky point (pure culmination), but also considering those
+    that are rising or setting, which don't hit their culmination during the night.
+
+    Here's the issue with the current approach: a setting target gets a high culmination score only
+    at night's start, then it drops for the rest of the time. This means it's rarely chosen. My
+    method aims to address this by shifting the focus. Instead of zeroing in on the actual physical
+    culmination point, it considers all potential culmination points where a target is visible at
+    night (above the altitude limit). It then aligns these with the actual observation window times.
+
+    So, a setting target scores high at night's beginning and then declines as it sets. However,
+    it's more likely to be picked because of its initial high score. A target reaching culmination
+    early in the night would hit its merit peak later on. Mid-night, the true culmination syncs
+    with this mapped culmination. And towards night's end, the modified merit peaks just before the
+    target's actual culmination point. This means we'll be observing targets slightly after their
+    culmination in the night's first half, around their peak in the middle, and a bit before their
+    culmination towards the end.
+
+    Opinion:
+    I think this is still suboptimal. Because the targets that culminate early in the night will
+    never be observed at actual culmination. They will always be observed a bit after. I have an
+    inckling that some random process will have to be used to solved this. So when you have to
+    decide between a target that is setting or a target that is culminating, its chosen randomly.
+    So on average things will balance out. But this is just a hunch, I have to think about it more.
     """
-    # Calculate the current altitude of the target
-    current_altitude = observation.obs_altitudes[0]
-    # Calculate altitude proportional to available altitue range
-    altitude_prop = (current_altitude - observation.min_altitude) / (
-        observation.max_altitude - observation.min_altitude
-    )
-    if verbose:
-        print(f"Current altitude: {current_altitude}")
-        print(f"Max altitude: {observation.max_altitude}")
-        print(f"Min altitude: {observation.min_altitude}")
-        print(f"Altitude proportion: {altitude_prop}")
-    return altitude_prop
+
+    # Calculate the time mapping for the target. This is the point of the night where the
+    # culmination of the target maps from the expanded night to the observation window.
+    peak_merit_time = observation.night.mapping(observation.culmination_time)
+    # Calculate the merit of the target at the mapping time
+    merit = gaussian((peak_merit_time - observation.start_time), 4 / 24)
+    return merit
+
+    # # Calculate the current altitude of the target
+    # current_altitude = observation.obs_altitudes[0]
+    # # Calculate altitude proportional to available altitue range
+    # altitude_prop = (current_altitude - observation.min_altitude) / (
+    #     observation.max_altitude - observation.min_altitude
+    # )
+    # if verbose:
+    #     print(f"Current altitude: {current_altitude}")
+    #     print(f"Max altitude: {observation.max_altitude}")
+    #     print(f"Min altitude: {observation.min_altitude}")
+    #     print(f"Altitude proportion: {altitude_prop}")
+    # return altitude_prop
 
 
 def periodic_gaussian(
@@ -240,6 +253,13 @@ def periodic_gaussian(
         print(f"current phase = {((observation.start_time - epoch) % period) / period}")
         print(f"{merit = }")
     return merit
+
+
+def gaussian(x, sigma):
+    """
+    A simple Gaussian.
+    """
+    return np.exp(-0.5 * (x / sigma) ** 2)
 
 
 # def cadence(
