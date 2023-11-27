@@ -88,26 +88,6 @@ class Night:
         offsets = np.array([-3, 3]) / 24  # in days
         self.culmination_window = self.obs_within_limits + offsets
 
-    def mapping(self, time: float) -> float:
-        """
-        Function that maps observable culmination time range to the actual observable night time range.
-
-        Paramteres:
-        time: float
-            The culmination time of the target in Julian Date
-
-        Returns:
-        mapped_time: float
-            The mapped time in Julian Date
-        """
-        time_prop = (time - self.culmination_window[0]) / (
-            self.culmination_window[1] - self.culmination_window[0]
-        )
-        mapped_time = self.obs_within_limits[0] + time_prop * (
-            self.obs_within_limits[1] - self.obs_within_limits[0]
-        )
-        return mapped_time
-
     def __str__(self):
         lines = [
             f"Night(Date: {self.night_date},",
@@ -283,6 +263,7 @@ class Observation:
         self.night_altaz_frame = self.target.coords.transform_to(
             self.night.observer.altaz(time=self.night.night_time_range)
         )
+
         # Get the altitudes and airmasses of the target during the night
         self.night_altitudes = self.night_altaz_frame.alt.deg
         self.night_airmasses = self.night_altaz_frame.secz
@@ -297,9 +278,23 @@ class Observation:
         self.min_altitude = max(self.night_altitudes.min(), tel_alt_lower_lim)
         # Get the maximum altitude of the target during the night
         self.max_altitude = min(self.night_altitudes.max(), tel_alt_upper_lim)
-        # Get time of maximum altitude
-        self.culmination_time = self.night.night_time_range[np.argmax(self.night_altitudes)].jd
 
+        # Get time of maximum altitude
+        # Create a time range for the culmination window (defined in the Night instance)
+        culmination_window_timerange = np.linspace(
+            Time(self.night.culmination_window[0], format="jd"),
+            Time(self.night.culmination_window[1], format="jd"),
+            300,
+        )
+        # Convert to AltAz frame and get the time of maximum altitude
+        self.culmination_time = self.target.coords.transform_to(
+            self.night.observer.altaz(time=culmination_window_timerange)
+        )
+        self.culmination_time = culmination_window_timerange[
+            np.argmax(self.culmination_time.alt.deg)
+        ].jd
+
+        # Get the rise and set times of the target
         start_time_astropy = Time(self.night.obs_within_limits[0], format="jd")
         start_time_astropy = self.night.night_time_range[0]
         if self.night_altitudes[0] > tel_alt_lower_lim:

@@ -189,25 +189,16 @@ def culmination_mapping(observation: Observation, verbose: bool = False) -> floa
     So on average things will balance out. But this is just a hunch, I have to think about it more.
     """
 
-    # Calculate the time mapping for the target. This is the point of the night where the
-    # culmination of the target maps from the expanded night to the observation window.
-    peak_merit_time = observation.night.mapping(observation.culmination_time)
+    time_prop = (observation.culmination_time - observation.night.culmination_window[0]) / (
+        observation.night.culmination_window[1] - observation.night.culmination_window[0]
+    )
+    peak_merit_time = observation.night.obs_within_limits[0] + time_prop * (
+        observation.night.obs_within_limits[1] - observation.night.obs_within_limits[0]
+    )
+
     # Calculate the merit of the target at the mapping time
     merit = gaussian((peak_merit_time - observation.start_time), 4 / 24)
     return merit
-
-    # # Calculate the current altitude of the target
-    # current_altitude = observation.obs_altitudes[0]
-    # # Calculate altitude proportional to available altitue range
-    # altitude_prop = (current_altitude - observation.min_altitude) / (
-    #     observation.max_altitude - observation.min_altitude
-    # )
-    # if verbose:
-    #     print(f"Current altitude: {current_altitude}")
-    #     print(f"Max altitude: {observation.max_altitude}")
-    #     print(f"Min altitude: {observation.min_altitude}")
-    #     print(f"Altitude proportion: {altitude_prop}")
-    # return altitude_prop
 
 
 def periodic_gaussian(

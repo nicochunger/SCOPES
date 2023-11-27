@@ -197,7 +197,7 @@ class Simulation:
         scheduler_instance = self.scheduler(observations[0].night.obs_within_limits[0])
 
         # Create the plan
-        plan = scheduler_instance.run(observations, max_plan_length=None, K=1)
+        plan = scheduler_instance.run(observations, max_plan_length=None, K=3)
         return plan
 
     def update_tracking_tables(self, plan: Plan):
