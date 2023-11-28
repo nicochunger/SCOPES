@@ -4,20 +4,18 @@ from typing import List
 from uuid import uuid4
 
 import astropy.units as u
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-from astroplan import AirmassConstraint, AltitudeConstraint, AtNightConstraint, is_observable
+from astroplan import AirmassConstraint, is_observable
 from astropy.coordinates import SkyCoord
 from astropy.time import Time
 from tqdm.auto import tqdm
 
 import merits
-import scheduler
 
 # from scheduler import generateQ
-from class_definitions import Merit, Night, Observation, Plan, Program, Target
-
-# from helper_functions import build_observations, load_program
+from class_definitions import Merit, Night, Observation, Plan, Target
 
 
 class Simulation:
@@ -28,9 +26,11 @@ class Simulation:
         self.night_within = night_within
         self.unique_id = uuid4()
         self.scheduler = scheduler_algorithm
-        self.save_folder = f"simulation_results/sim_{self.unique_id.hex}"
+        self.save_folder = f"simulation_results/sim_{datetime.now().strftime('%Y-%m-%d_%H:%M:%S')}"
         # Create the directory for saving the results
-        Path(self.save_folder).mkdir(parents=True, exist_ok=True)
+        Path(f"{self.save_folder}/plans").mkdir(parents=True, exist_ok=True)
+        Path(f"{self.save_folder}/night_plots").mkdir(parents=True, exist_ok=True)
+        Path(f"{self.save_folder}/time_share").mkdir(parents=True, exist_ok=True)
         self.programs = {}
         # Define default merits
         self.default_merits = [
@@ -197,7 +197,7 @@ class Simulation:
         scheduler_instance = self.scheduler(observations[0].night.obs_within_limits[0])
 
         # Create the plan
-        plan = scheduler_instance.run(observations, max_plan_length=None, K=3)
+        plan = scheduler_instance.run(observations, max_plan_length=None, K=1)
         return plan
 
     def update_tracking_tables(self, plan: Plan):
@@ -241,6 +241,8 @@ class Simulation:
                 "overhead_time": [plan.overhead_time],
             }
         )
+
+        # Update the time share of each program
         for prog in self.programs:
             new_night_history[f"{prog.progID}{prog.instrument}_allocated"] = [
                 prog.time_share_allocated
@@ -255,9 +257,62 @@ class Simulation:
             # Update the program's time share
             prog.update_time_share(prog_time_used)
 
-        self.night_history = pd.concat([self.night_history, new_night_history]).reset_index(
-            drop=True
-        )
+        # TODO, remove the "0 days" from the dataframe when its saved to csv
+
+        if self.night_history.empty:
+            # After the first night, the night history will still be empty
+            self.night_history = new_night_history.reset_index(drop=True)
+        else:
+            self.night_history = pd.concat([self.night_history, new_night_history]).reset_index(
+                drop=True
+            )
+
+    def plot_time_share(self):
+        """
+        Plots the time relative used time of each program compared to its allocated time
+        """
+
+        # Get the data for the first night
+        night_data = self.night_history.iloc[-1]
+
+        # Extract the program names, allocated time, and used time
+        prog_names = [f"{prog.progID}{prog.instrument}" for prog in self.programs]
+        allocated_time = [night_data[f"{prog}_allocated"] for prog in prog_names]
+        used_time = [night_data[f"{prog}_used"] for prog in prog_names]
+        x = np.arange(1, len(prog_names) + 1)
+        width = 0.35
+
+        # Calculate the difference between used and allocated times
+        time_difference = [used - allocated for used, allocated in zip(used_time, allocated_time)]
+
+        # Create subplots
+        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(8, 10))  # Adjust the figure size as needed
+        # First subplot: Allocated vs Used Time
+        ax1.bar(x - (width / 2), allocated_time, width, label="Allocated Time")
+        ax1.bar(x + (width / 2), used_time, width, label="Used Time")
+        # ax1.set_xlabel("Programs")
+        ax1.set_ylabel("Time")
+        ax1.set_xticks(x)
+        ax1.set_xticklabels(prog_names)
+        ax1.set_xlim(0.5, len(prog_names) + 0.5)
+        ax1.legend()
+        ax1.set_title(f"{night_data['night']}\nAllocated vs Used Time")
+
+        # Second subplot: Difference between Used and Allocated Time
+        ax2.bar(x, time_difference, width * 0.75, color="red", label="Time Difference")
+        ax2.axhline(y=0, color="grey", linestyle="--")
+        ax2.set_xlabel("Programs")
+        ax2.set_ylabel("Time Difference")
+        ax2.set_xticks(x)
+        ax2.set_xticklabels(prog_names)
+        ax2.set_xlim(0.5, len(prog_names) + 0.5)
+        ax2.legend()
+        ax2.set_title("Difference between Used and Allocated Time")
+
+        # Save the figure
+        plt.tight_layout()
+        fig.savefig(f"{self.save_folder}/time_share/{night_data['night']}_time_share.png", dpi=200)
+        plt.close()
 
     def run(self):
         """
@@ -305,14 +360,16 @@ class Simulation:
             # Update the tracking tables
             self.update_tracking_tables(plan)
 
-            # Update timeshare between programs
-            # Count the total time used by each program from the observation history
-
             # Save the plan (plots, tables, etc.)
-            plan.print_plan(save=True, path=f"{self.save_folder}/plan_{night.night_date}.txt")
-            plan.plot(
-                display=False, save=True, path=f"{self.save_folder}/plot_{night.night_date}.png"
+            plan.print_plan(
+                save=True, path=f"{self.save_folder}/plans/plan_{night.night_date}.txt"
             )
+            plan.plot(
+                display=False,
+                save=True,
+                path=f"{self.save_folder}/night_plots/plot_{night.night_date}.png",
+            )
+            self.plot_time_share()
 
         # Save the tracking tables to csv
         self.observation_history.to_csv(f"{self.save_folder}/observation_history.csv", index=False)

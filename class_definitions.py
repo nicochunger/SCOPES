@@ -107,10 +107,18 @@ class Night:
 
 class Program:
     def __init__(
-        self, progID: int, instrument: str, time_share_allocated: float, plot_color: str = None
+        self,
+        progID: int,
+        instrument: str,
+        time_share_allocated: float,
+        priority: int,
+        priority_base: int = 1,
+        priority_offset: float = 0.2,
+        plot_color: str = None,
     ):
         self.progID = progID
         self.instrument = instrument
+        self.priority = self.map_priority(priority, priority_base, priority_offset)
         self.plot_color = plot_color
         assert bool(re.search(re.compile("^#([A-Fa-f0-9]{6})$"), self.plot_color)) or (
             self.plot_color is None
@@ -122,7 +130,31 @@ class Program:
         self.time_share_current = 0.0
         self.time_share_pct_diff = 0.0
 
+    def map_priority(self, priority: int, priority_base: int, priority_offset: float) -> float:
+        """
+        Maps the given priority value to a new value based on the priority base and offset.
+
+        Parameters:
+            priority (float): The original priority value.
+            priority_base (float): The base value for mapping the priority.
+            priority_offset (float): The offset value for mapping the priority.
+
+        Returns:
+            float: The mapped priority value.
+        """
+        return priority_base + (priority_offset * (2 - priority))
+
     def update_time_share(self, current_timeshare: float):
+        """
+        Update the time share for the program.
+
+        Parameters:
+            current_timeshare (float):
+                The current time share used by the program in percent of the total
+
+        Returns:
+            None
+        """
         # Function that retrieves the current time used by the program
         self.time_share_current = current_timeshare
         self.time_share_pct_diff = (
@@ -130,7 +162,14 @@ class Program:
         ) / self.time_share_allocated
 
     def __str__(self) -> str:
-        print(f"Program({self.progID}, {self.instrument}, {self.time_share_allocated})")
+        lines = [
+            "Program(",
+            f"    ID = {self.progID}",
+            f"    Instrument = {self.instrument}",
+            f"    Time allocated = {self.time_share_allocated}",
+            f"    Priority = {self.priority})",
+        ]
+        return "\n".join(lines)
 
 
 class Merit:
@@ -177,6 +216,16 @@ class Merit:
         ), "There are given parameters that are not part of the given function"
 
     def evaluate(self, observation, **kwargs) -> float:
+        """
+        Evaluate the function with the given observation and additional arguments.
+
+        Parameters:
+            observation: The input observation.
+            **kwargs: Additional keyword arguments.
+
+        Returns:
+            float: The evaluation result.
+        """
         # Combine custom parameters and runtime arguments, then call the function
         all_args = {**self.parameters, **kwargs}
         return self.func(observation, **all_args)
@@ -190,7 +239,14 @@ class Merit:
 
 class Target:
     def __init__(
-        self, name: str, prog: Program, coords: SkyCoord, priority: int, exposure_time: float
+        self,
+        name: str,
+        prog: Program,
+        coords: SkyCoord,
+        exposure_time: float,
+        priority: int,
+        priority_base: float = 0,
+        priority_offset: float = 0.05,
     ):
         self.name = name
         self.program = prog
@@ -198,30 +254,56 @@ class Target:
         self.ra_deg = coords.ra.deg
         self.dec_deg = coords.dec.deg
         self.exposure_time = exposure_time
-        # self.last_obs = last_obs  # in Julian Date
-        self.priority = self.renormalize_priority(priority)
+        self.priority = self.map_priority(priority, priority_base, priority_offset)
         self.fairness_merits: List[Merit] = []  # List of all fairness merits
         self.efficiency_merits: List[Merit] = []  # List of all efficiency merits
         self.veto_merits: List[Merit] = []  # List to store veto merits
 
+    def map_priority(self, priority: float, priority_base: float, priority_offset: float) -> float:
+        """
+        Maps the given priority value to a new value based on the priority base and offset.
+
+        Parameters:
+            priority (float): The original priority value.
+            priority_base (float): The base value for mapping the priority.
+            priority_offset (float): The offset value for mapping the priority.
+
+        Returns:
+            float: The mapped priority value.
+        """
+        return priority_base + priority_offset * (2 - priority)
+
     def add_merits(self, merits: List[Merit]):
-        """Add a list of merits to the target"""
+        """
+        Adds a list of Merit objects to the instance.
+
+        Parameters:
+            merits (List[Merit]): A list of Merit objects to be added.
+
+        Raises:
+            AssertionError: If merits is not a list of Merit objects.
+
+        """
         assert isinstance(merits, list), "merits must be a list of Merit objects"
         for merit in merits:
             self.add_merit(merit)
 
     def add_merit(self, merit: Merit):
-        """Add a merit to the target"""
+        """
+        Adds a merit to the corresponding list based on its merit type.
+
+        Parameters:
+            merit (Merit): The merit object to be added.
+
+        Returns:
+            None
+        """
         if merit.merit_type == "fairness":
             self.fairness_merits.append(merit)
         elif merit.merit_type == "veto":
             self.veto_merits.append(merit)
         elif merit.merit_type == "efficiency":
             self.efficiency_merits.append(merit)
-
-    def renormalize_priority(self, priority: int):
-        """Renormalize the priority of the target"""
-        return (4 - priority) / 4
 
     def __str__(self):
         lines = [
@@ -333,12 +415,23 @@ class Observation:
             ).jd
 
     def fairness(self) -> float:
-        # TODO Implement the fairness
-        # fairness_value = np.prod([merit.evaluate() for merit in self.target.fairness_merits])
-        fairness_value = 1.0
-        return fairness_value  # type: ignore
+        """
+        Calculate the fairness score of the target.
+
+        The fairness score is calculated by multiplying the priority of the target+program
+        with the product of the evaluations of all fairness merits associated with the target.
+
+        Returns:
+            float: The fairness score of the target.
+        """
+        priority = self.target.program.priority + self.target.priority
+        merits = np.prod([merit.evaluate(self) for merit in self.target.fairness_merits])
+        return priority * merits
 
     def update_alt_airmass(self):
+        """
+        Update the altitude and airmass values based on the specified time range.
+        """
         # Find indices
         night_range_jd = self.night.night_time_range.value
         start_idx = np.searchsorted(night_range_jd, self.start_time, side="left")
@@ -348,7 +441,15 @@ class Observation:
         self.obs_airmasses = self.night_airmasses[start_idx:end_idx]
 
     def feasible(self, verbose: bool = False) -> float:
-        # Update all veto merits and return their product
+        """
+        Determines the feasibility of the target based on the veto merits.
+
+        Parameters:
+            verbose (bool): If True, prints the name and value of each veto merit.
+
+        Returns:
+            float: The sensibility value, which is the product of all veto merit values.
+        """
         veto_merit_values = []
         for merit in self.target.veto_merits:
             value = merit.evaluate(self)
@@ -361,16 +462,32 @@ class Observation:
         return self.sensibility_value  # type: ignore
 
     def separation_calc(self, previous_obs):
+        """
+        Calculate the separation between the current observation and the previous observation.
+
+        Parameters:
+            previous_obs (Observation): The previous observation.
+
+        Returns:
+            float: The separation between the current observation and the previous observation.
+        """
         prev_coords = (previous_obs.target.ra_deg, previous_obs.target.dec_deg)
-        obs_corrds = (self.target.ra_deg, self.target.dec_deg)
+        obs_coords = (self.target.ra_deg, self.target.dec_deg)
         return np.sqrt(
-            (prev_coords[0] - obs_corrds[0]) ** 2 + (prev_coords[1] - obs_corrds[1]) ** 2
+            (prev_coords[0] - obs_coords[0]) ** 2 + (prev_coords[1] - obs_coords[1]) ** 2
         )
 
     def update_start_time(self, previous_obs):
-        # Update of the start time according to slew times and instrument configuration
-        # sep_deg = previous_obs.target.coords.separation(self.target.coords).deg
+        """
+        Updates the start time of the observation based on the previous observation taking into
+        account the overheads and instrument change.
 
+        Parameters:
+            previous_obs (Observation): The previous observation.
+
+        Returns:
+            None
+        """
         sep_deg = self.separation_calc(previous_obs)
         # FIX: This is a dummy slew time and inst change for now, replace with fetching from config file
         slew_rate = 2  # degrees per second
@@ -392,9 +509,15 @@ class Observation:
             self.evaluate_score()
 
     def evaluate_score(self, verbose: bool = False) -> float:
-        # Run the full rank function for the observation (dummy score for now)
-        # This involves running all the veto and efficiency merits.
+        """
+        Evaluates the score of the observation based on fairness, sensibility, and efficiency.
 
+        Parameters:
+            verbose (bool): If True, print the fairness, sensibility, efficiency, and rank score.
+
+        Returns:
+            float: The score of the observation.
+        """
         # --- Fairness ---
         # Balances time allocation and priority
         fairness = self.fairness_value
