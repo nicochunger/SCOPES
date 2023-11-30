@@ -157,9 +157,7 @@ class Program:
         """
         # Function that retrieves the current time used by the program
         self.time_share_current = current_timeshare
-        self.time_share_pct_diff = (
-            self.time_share_current - self.time_share_allocated
-        ) / self.time_share_allocated
+        self.time_share_pct_diff = self.time_share_current - self.time_share_allocated
 
     def __str__(self) -> str:
         lines = [
@@ -339,7 +337,7 @@ class Observation:
         self.score: float = 0.0  # Initialize score to zero
         self.veto_merits: List[float] = []  # List to store veto merits
         self.unique_id = uuid.uuid4()
-        self.fairness_value = self.fairness()
+        # self.fairness_value = self.fairness()
 
         # Create the AltAz frame for the observation during the night
         self.night_altaz_frame = self.target.coords.transform_to(
@@ -520,7 +518,8 @@ class Observation:
         """
         # --- Fairness ---
         # Balances time allocation and priority
-        fairness = self.fairness_value
+        # fairness = self.fairness_value
+        fairness = self.fairness()
 
         # --- Sensibility ---
         # Veto merits that check for observatbility
