@@ -32,7 +32,7 @@ def time_share(observation: Observation, alpha: int = 5, beta: float = 5.0) -> f
     assert alpha > 0, "alpha for time_share merit must be greater than 0"
     assert alpha % 2 == 1, "alpha for time_share merit must be an odd positive integer"
     # Calculate the time share of the observation
-    pct_diff = observation.target.program.time_share_pct_diff
+    pct_diff = observation.target.program.time_share_pct_diff * 100
     # Calculate the merit
     m = 0.5 + (1 / (1 + np.exp(((pct_diff / beta) ** alpha))))
     return m

@@ -19,13 +19,16 @@ from class_definitions import Merit, Night, Observation, Plan, Target
 
 
 class Simulation:
-    def __init__(self, start_date, end_date, observer, night_within, scheduler_algorithm):
+    def __init__(
+        self, start_date, end_date, observer, night_within, scheduler_algorithm, keep_top_n=50
+    ):
         self.start_date = start_date
         self.end_date = end_date
         self.observer = observer
         self.night_within = night_within
         self.unique_id = uuid4()
         self.scheduler = scheduler_algorithm
+        self.keep_top_n = keep_top_n
         self.save_folder = f"simulation_results/sim_{datetime.now().strftime('%Y-%m-%d_%H:%M:%S')}"
         # Create the directory for saving the results
         Path(f"{self.save_folder}/plans").mkdir(parents=True, exist_ok=True)
@@ -62,7 +65,15 @@ class Simulation:
         targets = []
         # Load the program targets
         cat = pd.read_csv(file)
-        for _, tar in cat.iterrows():
+        cat_keep = np.ones(len(cat), dtype=bool)
+        for i, tar in cat.iterrows():
+            # If the target doesn't have a priority assigned, it is ignored and not observed
+            if np.isnan(tar["priority"]):
+                # Update keep array to keep track of which targets are ignored
+                cat_keep[i] = False
+                continue
+
+            # Start building the Target object
             merit_list = self.default_merits.copy()
             skycoord = SkyCoord(tar["ra"], tar["dec"], unit=(u.hourangle, u.deg))
             target = Target(
@@ -80,29 +91,34 @@ class Simulation:
 
             # Determine the chosen merits for the target
             if "period" in tar.index:
-                # Remove the culmination and egress merit
-                merit_list.pop(3)
-                # merit_list.pop(4)
-                # Add the PhaseSpecific merit
-                phases = []
-                if tar["phase1"] > 0:
-                    phases.append(tar["phase1"])
-                if tar["phase2"] > 0:
-                    phases.append(tar["phase2"])
+                # Check that all four columns are present
+                if not np.isnan(tar[["period", "epoch", "phase1"]].values.astype(float)).any():
+                    # Remove the culmination merit
+                    merit_list.pop(3)
+                    if tar["phase1"] > 1 or tar["phase1"] < 0:
+                        raise ValueError("phase1 must be between 0 and 1")
+                    # Add the PhaseSpecific merit
+                    phases = [tar["phase1"]]
+                    # Add phase2 if it is present
+                    if not np.isnan(tar["phase2"]):
+                        if tar["phase2"] > 0 or tar["phase2"] < 1:
+                            phases.append(tar["phase2"])
+                        else:
+                            raise ValueError("phase2 must be between 0 and 1")
 
-                merit_list.append(
-                    Merit(
-                        "PhaseSpecific",
-                        merits.periodic_gaussian,
-                        merit_type="efficiency",
-                        parameters={
-                            "epoch": tar["epoch"],
-                            "period": tar["period"],
-                            "sigma": 0.1,
-                            "phases": phases,
-                        },
+                    merit_list.append(
+                        Merit(
+                            "PhaseSpecific",
+                            merits.periodic_gaussian,
+                            merit_type="efficiency",
+                            parameters={
+                                "epoch": tar["epoch"],
+                                "period": tar["period"],
+                                "sigma": 0.1,
+                                "phases": phases,
+                            },
+                        )
                     )
-                )
 
             for merit in merit_list:
                 target.add_merit(merit)
@@ -111,7 +127,7 @@ class Simulation:
             targets.append(target)
 
         # Add to the programs dictionary
-        self.programs[prog] = {"targets": targets, "file": file, "df": cat}
+        self.programs[prog] = {"targets": targets, "file": file, "df": cat, "keep": cat_keep}
 
     def determine_observability(self, night):
         """
@@ -128,15 +144,14 @@ class Simulation:
         targets = []
         time_range = Time([night.obs_within_limits[0], night.obs_within_limits[1]], format="jd")
         for prog in self.programs:
-            tar_coords = []
-            for target in self.programs[prog]["targets"]:
-                # Get the coords of the target
-                tar_coords.append(target.coords)
+            tar_coords = [target.coords for target in self.programs[prog]["targets"]]
             # Determine the observability of the targets
             keep = is_observable(constraints, night.observer, tar_coords, time_range=time_range)
 
             # Check if targets are due to be observed (cadence constraints)
             cat = self.programs[prog]["df"]
+            # Keep the ones that are instructed to be observed
+            cat = cat[self.programs[prog]["keep"]]
             if "cadence" in cat.columns:
                 # Get last observation of all targets
                 last_observation_dates = cat["catalog_name"].apply(
@@ -146,6 +161,11 @@ class Simulation:
                     if x in self.observation_history["target"].unique()
                     else 0
                 )
+
+                # Set default cadence to 7 days if not specified
+                cat.loc[:, "cadence"] = cat["cadence"].fillna(7)
+
+                # Calculate the percentage of time overdue
                 cat_mod = (
                     cat.assign(last_obs=last_observation_dates)
                     .assign(
@@ -165,13 +185,16 @@ class Simulation:
                 ].sort_values(by="score", ascending=True)
 
                 # Take the top 50 targets
-                top_50 = filtered_sorted.head(200).sample(min([50, len(filtered_sorted)]))
+                top_n = filtered_sorted.head(100).sample(
+                    min([self.keep_top_n, len(filtered_sorted)])
+                )
+                # top_n = filtered_sorted.head(self.keep_top_n)
 
                 # Create a boolean series for marking top 50 targets
-                top_50_marks = cat_mod.index.isin(top_50.index)
+                top_n_marks = cat_mod.index.isin(top_n.index)
 
                 # Update keep array
-                keep = top_50_marks
+                keep = top_n_marks
 
             # Get observable targets
             obs_targets = list(np.array(self.programs[prog]["targets"])[keep])
@@ -182,10 +205,10 @@ class Simulation:
         """
         Builds a list of observations for a given list of targets, exposure time, and file name.
         """
-        print("Building observations...")
+        # print("Building observations...")
         observations = [
             Observation(target, night.obs_within_limits[0], target.exposure_time, night)
-            for target in tqdm(targets)
+            for target in targets
         ]
         return observations
 
@@ -193,7 +216,7 @@ class Simulation:
         """
         Builds a plan from a list of observations.
         """
-        print("Building plan...")
+        # print("Building plan...")
         scheduler_instance = self.scheduler(observations[0].night.obs_within_limits[0])
 
         # Create the plan
@@ -218,9 +241,13 @@ class Simulation:
                 "score": [obs.score for obs in plan.observations],
             }
         )
-        self.observation_history = pd.concat(
-            [self.observation_history, new_observation_history]
-        ).reset_index(drop=True)
+        if self.observation_history.empty:
+            # After the first night, the observation history will still be empty
+            self.observation_history = new_observation_history.reset_index(drop=True)
+        else:
+            self.observation_history = pd.concat(
+                [self.observation_history, new_observation_history]
+            ).reset_index(drop=True)
 
         total_prog_time = self.observation_history.groupby("program")["texp"].sum()
         tonights_obs_time = plan.observation_time.total_seconds() / 86400
@@ -248,16 +275,14 @@ class Simulation:
                 prog.time_share_allocated
             ]
             try:
-                prog_time_used = [relative_used_time[f"{prog.progID}{prog.instrument}"]]
+                prog_time_used = relative_used_time[f"{prog.progID}{prog.instrument}"]
             except KeyError:
                 # In case this program was not observed yet
-                prog_time_used = [0]
+                prog_time_used = 0
 
-            new_night_history[f"{prog.progID}{prog.instrument}_used"] = prog_time_used
+            new_night_history[f"{prog.progID}{prog.instrument}_used"] = [prog_time_used]
             # Update the program's time share
             prog.update_time_share(prog_time_used)
-
-        # TODO, remove the "0 days" from the dataframe when its saved to csv
 
         if self.night_history.empty:
             # After the first night, the night history will still be empty
@@ -267,7 +292,7 @@ class Simulation:
                 drop=True
             )
 
-    def plot_time_share(self):
+    def plot_time_share(self, display=False):
         """
         Plots the time relative used time of each program compared to its allocated time
         """
@@ -312,7 +337,10 @@ class Simulation:
         # Save the figure
         plt.tight_layout()
         fig.savefig(f"{self.save_folder}/time_share/{night_data['night']}_time_share.png", dpi=200)
-        plt.close()
+        if display:
+            plt.show()
+        else:
+            plt.close()
 
     def run(self):
         """
@@ -341,9 +369,9 @@ class Simulation:
             night_history_cols.append(f"{prog.progID}{prog.instrument}_used")
         self.night_history = pd.DataFrame(columns=night_history_cols)
 
-        plans = []
+        self.plans = []
         # Looping over the nights
-        for night in self.nights:
+        for night in tqdm(self.nights):
             print(f"\nRunning night: {night.night_date}")
             # For each program determine the observable targets
             self.observable_targets = self.determine_observability(night)
@@ -354,9 +382,9 @@ class Simulation:
             # Build the plan
             plan = self.build_plan(self.observations)
 
-            plans.append(plan)
+            self.plans.append(plan)
 
-            print("Updating tracking tables and saving plan...")
+            # print("Updating tracking tables and saving plan...")
             # Update the tracking tables
             self.update_tracking_tables(plan)
 
@@ -373,6 +401,14 @@ class Simulation:
 
         # Save the tracking tables to csv
         self.observation_history.to_csv(f"{self.save_folder}/observation_history.csv", index=False)
-        self.night_history.to_csv(f"{self.save_folder}/night_history.csv", index=False)
+        # Create a tempirary df with the timedeltas formatted as strings in the format HH:MM:SS
+        temp_nh = self.night_history.copy()
+        temp_nh["observation_time"] = temp_nh["observation_time"].apply(
+            lambda x: (datetime(2000, 1, 1) + x).strftime("%H:%M:%S")
+        )
+        temp_nh["overhead_time"] = temp_nh["overhead_time"].apply(
+            lambda x: (datetime(2000, 1, 1) + x).strftime("%H:%M:%S")
+        )
+        temp_nh.to_csv(f"{self.save_folder}/night_history.csv", index=False)
 
-        return plans, self.observation_history, self.night_history
+        return self.plans, self.observation_history, self.night_history
