@@ -270,17 +270,15 @@ class Simulation:
         )
 
         # Update the time share of each program
-        for prog in self.programs:
-            new_night_history[f"{prog.progID}{prog.instrument}_allocated"] = [
-                prog.time_share_allocated
-            ]
+        for i, prog in enumerate(self.programs):
+            new_night_history[f"{self.prog_names[i]}_allocated"] = [prog.time_share_allocated]
             try:
-                prog_time_used = relative_used_time[f"{prog.progID}{prog.instrument}"]
+                prog_time_used = relative_used_time[f"{self.prog_names[i]}"]
             except KeyError:
                 # In case this program was not observed yet
                 prog_time_used = 0
 
-            new_night_history[f"{prog.progID}{prog.instrument}_used"] = [prog_time_used]
+            new_night_history[f"{self.prog_names[i]}_used"] = [prog_time_used]
             # Update the program's time share
             prog.update_time_share(prog_time_used)
 
@@ -301,10 +299,10 @@ class Simulation:
         night_data = self.night_history.iloc[-1]
 
         # Extract the program names, allocated time, and used time
-        prog_names = [f"{prog.progID}{prog.instrument}" for prog in self.programs]
-        allocated_time = [night_data[f"{prog}_allocated"] for prog in prog_names]
-        used_time = [night_data[f"{prog}_used"] for prog in prog_names]
-        x = np.arange(1, len(prog_names) + 1)
+        # prog_names = [f"{prog.progID}{prog.instrument}" for prog in self.programs]
+        allocated_time = [night_data[f"{prog}_allocated"] for prog in self.prog_names]
+        used_time = [night_data[f"{prog}_used"] for prog in self.prog_names]
+        x = np.arange(1, len(self.prog_names) + 1)
         width = 0.35
 
         # Calculate the difference between used and allocated times
@@ -318,8 +316,8 @@ class Simulation:
         # ax1.set_xlabel("Programs")
         ax1.set_ylabel("Time")
         ax1.set_xticks(x)
-        ax1.set_xticklabels(prog_names)
-        ax1.set_xlim(0.5, len(prog_names) + 0.5)
+        ax1.set_xticklabels(self.prog_names)
+        ax1.set_xlim(0.5, len(self.prog_names) + 0.5)
         ax1.legend()
         ax1.set_title(f"{night_data['night']}\nAllocated vs Used Time")
 
@@ -329,8 +327,9 @@ class Simulation:
         ax2.set_xlabel("Programs")
         ax2.set_ylabel("Time Difference")
         ax2.set_xticks(x)
-        ax2.set_xticklabels(prog_names)
-        ax2.set_xlim(0.5, len(prog_names) + 0.5)
+        ax2.set_xticklabels(self.prog_names)
+        ax2.set_xlim(0.5, len(self.prog_names) + 0.5)
+        ax2.set_ylim(-0.5, 0.5)
         ax2.legend()
         ax2.set_title("Difference between Used and Allocated Time")
 
@@ -341,6 +340,36 @@ class Simulation:
             plt.show()
         else:
             plt.close()
+
+    def post_simulation_diagnostic(self, display=False):
+        """
+        Plots the time share of each program over the course of the simulation.
+        """
+
+        # Plots the time share of each program over the course of the simulation.
+        plt.figure(figsize=(8, 5))
+        for i, prog in enumerate(self.programs):
+            plt.plot(
+                self.night_history["night"],
+                self.night_history[f"{self.prog_names[i]}_used"]
+                - self.night_history[f"{self.prog_names[i]}_allocated"],
+                label=self.prog_names[i],
+                color=prog.plot_color,
+            )
+        plt.xlabel("Night")
+        plt.xticks(self.night_history["night"], rotation=45, ha="right")
+        plt.ylabel("Difference between used and allocated time")
+        plt.title("Relative Used Time of Each Program")
+        plt.legend()
+
+        plt.tight_layout()
+        plt.savefig(f"{self.save_folder}/time_share/relative_used_time.png", dpi=200)
+        if display:
+            plt.show()
+        else:
+            plt.close()
+
+        # TODO Calculate how well it followed the cadence constraints
 
     def run(self):
         """
@@ -353,6 +382,8 @@ class Simulation:
             print("No programs have been added to the simulation.")
             return
 
+        self.prog_names = [f"{prog.progID}{prog.instrument}" for prog in self.programs]
+
         # Initialize the tracking tables for the observations and nights
         self.observation_history = pd.DataFrame(
             columns=["target", "program", "obs_time", "texp", "night", "score"]
@@ -364,9 +395,9 @@ class Simulation:
             "observation_time",
             "overhead_time",
         ]
-        for prog in self.programs:
-            night_history_cols.append(f"{prog.progID}{prog.instrument}_allocated")
-            night_history_cols.append(f"{prog.progID}{prog.instrument}_used")
+        for progname in self.prog_names:
+            night_history_cols.append(f"{progname}_allocated")
+            night_history_cols.append(f"{progname}_used")
         self.night_history = pd.DataFrame(columns=night_history_cols)
 
         self.plans = []
@@ -398,6 +429,9 @@ class Simulation:
                 path=f"{self.save_folder}/night_plots/plot_{night.night_date}.png",
             )
             self.plot_time_share()
+
+        # Run the post simulation diagnostic
+        self.post_simulation_diagnostic()
 
         # Save the tracking tables to csv
         self.observation_history.to_csv(f"{self.save_folder}/observation_history.csv", index=False)
