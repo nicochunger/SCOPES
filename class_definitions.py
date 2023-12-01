@@ -113,7 +113,7 @@ class Program:
         time_share_allocated: float,
         priority: int,
         priority_base: int = 1,
-        priority_offset: float = 0.2,
+        priority_offset: float = 0.1,
         plot_color: str = None,
     ):
         self.progID = progID

@@ -8,7 +8,9 @@ import config
 from class_definitions import Observation
 
 
-def time_share(observation: Observation, alpha: int = 5, beta: float = 5.0) -> float:
+def time_share(
+    observation: Observation, alpha: int = 3, beta: float = 5.0, delta: float = 0.2
+) -> float:
     """
     Time share fairness merit. It uses a modified sigmoid function to calculate the merit.
     The specific shape can be set with the parameters alpha and beta. The exact formula is:
@@ -28,13 +30,25 @@ def time_share(observation: Observation, alpha: int = 5, beta: float = 5.0) -> f
         beta: (float)
             The leeway parameter for how much difference in time use is allowed
     """
-    assert beta > 0.0, "beta for time_share merit must be greater than 0"
     assert alpha > 0, "alpha for time_share merit must be greater than 0"
     assert alpha % 2 == 1, "alpha for time_share merit must be an odd positive integer"
+    assert beta > 0.0, "beta for time_share merit must be greater than 0"
+    assert delta > 0.0, "delta for time_share merit must be greater than 0"
     # Calculate the time share of the observation
     pct_diff = observation.target.program.time_share_pct_diff * 100
+    exp_term = (pct_diff / beta) ** alpha
+    abs_exp_term = abs(exp_term)
+    # If the exponent is too big, cap it at 5 or -5 (after that the exp term is too big and caps
+    # at the limits of 1.5 and 0.5)
+    if abs_exp_term > 5:
+        sign = exp_term / abs_exp_term
+        exp_term = sign * 5
+
+    # New merit
+    m = (delta / (1 + np.exp(exp_term))) + (1 - delta / 2)
+
     # Calculate the merit
-    m = 0.5 + (1 / (1 + np.exp(((pct_diff / beta) ** alpha))))
+    # m = 0.5 + (1 / (1 + np.exp(exp_term)))
     return m
 
 
