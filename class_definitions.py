@@ -28,27 +28,29 @@ class Night:
         # For now just take the night of the input time
         self.night_date = night_date
         self.observer = observer
-        self.midnight = Time(
+        self.night_middle = Time(
             datetime.combine(self.night_date, datetime.min.time()) + timedelta(days=1, hours=4)
         )
-        self.sunset = self.observer.sun_set_time(self.midnight, which="previous")
-        self.sunrise = self.observer.sun_rise_time(self.midnight, which="next")
+        self.sunset = self.observer.sun_set_time(self.night_middle, which="previous")
+        self.sunrise = self.observer.sun_rise_time(self.night_middle, which="next")
 
         # Get the times for the different twilights
-        self.civil_evening = self.observer.twilight_evening_civil(self.midnight, which="previous")
+        self.civil_evening = self.observer.twilight_evening_civil(
+            self.night_middle, which="previous"
+        )
         self.nautical_evening = self.observer.twilight_evening_nautical(
-            self.midnight, which="previous"
+            self.night_middle, which="previous"
         )
         self.astronomical_evening = self.observer.twilight_evening_astronomical(
-            self.midnight, which="previous"
+            self.night_middle, which="previous"
         )
         # And the same for the morning
-        self.civil_morning = self.observer.twilight_morning_civil(self.midnight, which="next")
+        self.civil_morning = self.observer.twilight_morning_civil(self.night_middle, which="next")
         self.nautical_morning = self.observer.twilight_morning_nautical(
-            self.midnight, which="next"
+            self.night_middle, which="next"
         )
         self.astronomical_morning = self.observer.twilight_morning_astronomical(
-            self.midnight, which="next"
+            self.night_middle, which="next"
         )
         # Time ranges for the different twilights
         self.time_range_solar = np.linspace(self.sunset, self.sunrise, 300)
@@ -329,6 +331,16 @@ class Observation:
         exposure_time: float,
         night: Night,
     ):
+        """
+        Initialize a new instance of the Observation class.
+
+        Parameters:
+            target (Target): The Target object representing the target being observed.
+            start_time (float): The start time of the observation in JD (Julian Date).
+            exposure_time (float): The duration of the observation in days.
+            night (Night): The Night object representing the night during which the observation takes place.
+        """
+
         self.target = target
         self.start_time = start_time
         self.exposure_time = exposure_time
@@ -524,10 +536,10 @@ class Observation:
         # --- Sensibility ---
         # Veto merits that check for observatbility
         sensibility = self.sensibility_value
-        if sensibility == 0.0:
-            # If sensibility is zero, then the observation is not feasible
-            self.score = 0.0
-            return self.score
+        # if sensibility == 0.0:
+        #     # If sensibility is zero, then the observation is not feasible
+        #     self.score = 0.0
+        #     return self.score
 
         # --- Efficiency ---
         # Efficiency merits that check for scientific goal

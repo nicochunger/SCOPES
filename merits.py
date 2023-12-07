@@ -9,7 +9,7 @@ from class_definitions import Observation
 
 
 def time_share(
-    observation: Observation, alpha: int = 3, beta: float = 5.0, delta: float = 0.2
+    observation: Observation, alpha: int = 3, beta: float = 5.0, delta: float = 0.1
 ) -> float:
     """
     Time share fairness merit. It uses a modified sigmoid function to calculate the merit.
@@ -256,6 +256,37 @@ def periodic_gaussian(
         )
     if verbose:
         print(f"current phase = {((observation.start_time - epoch) % period) / period}")
+        print(f"{merit = }")
+    return merit
+
+
+def time_critical(
+    observation: Observation,
+    start_time: float,
+    start_time_tolerance: float,
+    steepness: float = 0.0014,  # in days, around 2 minutes
+    verbose: bool = False,
+) -> float:
+    """
+    Calculate the time criticality merit of an observation. It uses a double hyperbolic tangent
+    function to gradually increase the merit as the observation approaches the desired start time.
+    The center times of the increasing tanh and decresing tanh, are start_time - start_time_tolerance
+    and start_time + start_time_tolerance, respectively.
+
+    Parameters:
+    observation (Observation): The observation object.
+    start_time (float): The desired start time for the observation.
+    start_time_tolerance (float): The tolerance around the desired start time.
+    verbose (bool, optional): If True, print the calculated merit. Defaults to False.
+
+    Returns:
+    float: The time criticality merit of the observation.
+    """
+    arg1 = (observation.start_time - (start_time - start_time_tolerance)) / steepness
+    arg2 = ((start_time + start_time_tolerance) - observation.start_time) / steepness
+    merit = np.tanh(arg1) + np.tanh(arg2)
+
+    if verbose:
         print(f"{merit = }")
     return merit
 

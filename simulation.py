@@ -42,10 +42,11 @@ class Simulation:
             Merit("AtNight", merits.at_night, merit_type="veto"),
             # Merit("Culmination", merits.culmination, merit_type="efficiency"),
             Merit("CulMapping", merits.culmination_mapping, merit_type="efficiency"),
-            # Merit("Egress", merits.egress, merit_type="efficiency"),
             Merit("TimeShare", merits.time_share, merit_type="fairness"),
         ]
-        self.nights = []
+
+        # Build the night objects
+        self.build_nights()
 
     def build_nights(self):
         """
@@ -94,12 +95,16 @@ class Simulation:
                 # Check that all four columns are present
                 if not np.isnan(tar[["period", "epoch", "phase1"]].values.astype(float)).any():
                     # Remove the culmination merit
-                    merit_list.pop(3)
+                    for merit in merit_list:
+                        if merit.name == "CulMapping":
+                            merit_list.remove(merit)
+                            break
+                    # Check that phase1 is between 0 and 1
                     if tar["phase1"] > 1 or tar["phase1"] < 0:
                         raise ValueError("phase1 must be between 0 and 1")
                     # Add the PhaseSpecific merit
                     phases = [tar["phase1"]]
-                    # Add phase2 if it is present
+                    # Add phase2 if it is present and valid
                     if not np.isnan(tar["phase2"]):
                         if tar["phase2"] > 0 or tar["phase2"] < 1:
                             phases.append(tar["phase2"])
@@ -116,6 +121,29 @@ class Simulation:
                                 "period": tar["period"],
                                 "sigma": 0.1,
                                 "phases": phases,
+                            },
+                        )
+                    )
+
+            if "start_time" in tar.index:
+                if not np.isnan(
+                    tar[["start_time", "start_time_tolerance"]].values.astype(float)
+                ).any():
+                    # Remove the culmination and airmass merits
+                    for merit in merit_list:
+                        if merit.name == "CulMapping":
+                            merit_list.remove(merit)
+                        elif merit.name == "Airmass":
+                            merit_list.remove(merit)
+
+                    merit_list.append(
+                        Merit(
+                            "TimeCritical",
+                            merits.time_critical,
+                            merit_type="efficiency",
+                            parameters={
+                                "start_time": tar["start_time"],
+                                "start_time_tolerance": tar["start_time_tolerance"],
                             },
                         )
                     )
@@ -376,7 +404,7 @@ class Simulation:
         Runs the simulation.
         """
         # Build the nights
-        self.build_nights()
+        # self.build_nights()
 
         if self.programs == {}:
             print("No programs have been added to the simulation.")
