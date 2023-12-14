@@ -15,20 +15,24 @@ def time_share(
     Time share fairness merit. It uses a modified sigmoid function to calculate the merit.
     The specific shape can be set with the parameters alpha and beta. The exact formula is:
 
-    0.5 + (1 / (1 + exp((pct_diff/beta)^alpha)))
+    m = (delta / (1 + np.exp((pct_diff / beta) ** alpha))) + (1 - delta / 2)
 
     It's shaped in a way so that there is some permissiveness. This means that a program
     can be over or under the allocated time by a certain percentage before its priority is decreased
     or increased. The alpha parameter controls how sharp the sigmoid is, and the beta parameter
     controls how much difference is allowed (in percentage).
 
-    Parameters:
-        observation: (Observation)
-            The Observation object to be used
-        alpha: (float)
-            The attack parameter for how sharp the sigmoid is
-        beta: (float)
-            The leeway parameter for how much difference in time use is allowed
+    Parameters
+    ----------
+    observation : Observation
+        The Observation object to be used
+    alpha : float
+        The attack parameter for how sharp the sigmoid is
+    beta : float
+        The leeway parameter for how much difference in time use is allowed
+    delta : float
+        The maximum percentage increase or decrease that will be applied if a program is over or
+        under its allocated time.
     """
     assert alpha > 0, "alpha for time_share merit must be greater than 0"
     assert alpha % 2 == 1, "alpha for time_share merit must be an odd positive integer"
@@ -38,22 +42,29 @@ def time_share(
     pct_diff = observation.target.program.time_share_pct_diff * 100
     exp_term = (pct_diff / beta) ** alpha
     abs_exp_term = abs(exp_term)
-    # If the exponent is too big, cap it at 5 or -5 (after that the exp term is too big and caps
-    # at the limits of 1.5 and 0.5)
+
+    # If the exponent is too big, cap it at 5 or -5
+    # This is to limit the size of the exponent term and control the np.exp() function.
+    # After 5 the merit already reaches its limits
     if abs_exp_term > 5:
         sign = exp_term / abs_exp_term
         exp_term = sign * 5
 
-    # New merit
+    # merit
     m = (delta / (1 + np.exp(exp_term))) + (1 - delta / 2)
-
-    # Calculate the merit
-    # m = 0.5 + (1 / (1 + np.exp(exp_term)))
     return m
 
 
 def at_night(observation: Observation) -> float:
-    """Merit function that returns 1 if the observation is at night, 0 otherwise"""
+    """
+    Merit function that returns 1 if the observation is within the chosen night time limits, and
+    0 otherwise.
+
+    Paramaters
+    ----------
+    observation : Observation
+        The Observation object to be used
+    """
     start_time = observation.start_time
     end_time = start_time + observation.exposure_time
     if (
@@ -65,19 +76,35 @@ def at_night(observation: Observation) -> float:
         return 0.0
 
 
-def airmass(observation: Observation, max: float) -> float:
+def airmass(observation: Observation, max: float, alpha: float = 0.05) -> float:
     """
     Merit function on the airmass of the observation. It uses a hyperbolic tangent function to
     gradually increase the merit as the airmass increases. The specific shape can be set with the
     parameters min and alpha. The exact formula is:
-    # TODO Implement the hyperbolic tangent function so that there is some leeway in the airmass
+
+    m = tanh((max - current_airmass) / alpha)
+
+    Parameters
+    ----------
+    observation : Observation
+        The Observation object to be used
+    max : float
+        The maximum airmass allowed for this observation
+    alpha : float
+        A measure of the tolerance around the maximum airmass
     """
     # Claculate airmass throughout the exposure of the observation
     if len(observation.obs_airmasses) == 0:
         return 0.0
     else:
-        max_airmass = observation.obs_airmasses.max()
-        return max_airmass < max
+        return observation.obs_airmasses.max() < max
+
+    # Same but with the tangent function
+    # if len(observation.obs_airmasses) == 0:
+    #     return 0.0
+    # else:
+    #     arg = (max - observation.obs_airmasses.max()) / alpha
+    #     return np.tanh(arg)
 
 
 def altitude(
@@ -264,7 +291,7 @@ def time_critical(
     observation: Observation,
     start_time: float,
     start_time_tolerance: float,
-    steepness: float = 0.0014,  # in days, around 2 minutes
+    steepness: float = 0.0014,  # in days, which is ~2 minutes
     verbose: bool = False,
 ) -> float:
     """
@@ -273,11 +300,16 @@ def time_critical(
     The center times of the increasing tanh and decresing tanh, are start_time - start_time_tolerance
     and start_time + start_time_tolerance, respectively.
 
-    Parameters:
-    observation (Observation): The observation object.
-    start_time (float): The desired start time for the observation.
-    start_time_tolerance (float): The tolerance around the desired start time.
-    verbose (bool, optional): If True, print the calculated merit. Defaults to False.
+    Parameters
+    ----------
+    observation : Observation
+        The observation object.
+    start_time : float
+        The desired start time for the observation.
+    start_time_tolerance : float
+        The tolerance around the desired start time.
+    verbose : bool, optional
+        If True, print the calculated merit. Defaults to False.
 
     Returns:
     float: The time criticality merit of the observation.
@@ -287,7 +319,7 @@ def time_critical(
     merit = np.tanh(arg1) + np.tanh(arg2)
 
     if verbose:
-        print(f"{merit = }")
+        print(f"time_critical {merit = }")
     return merit
 
 

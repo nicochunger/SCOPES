@@ -136,13 +136,18 @@ class Program:
         """
         Maps the given priority value to a new value based on the priority base and offset.
 
-        Parameters:
-            priority (float): The original priority value.
-            priority_base (float): The base value for mapping the priority.
-            priority_offset (float): The offset value for mapping the priority.
+        Parameters
+        ----------
+        priority : float
+            The original priority value.
+        priority_base : float
+            The base value for mapping the priority.
+        priority_offset : float
+            The offset value for mapping the priority.
 
-        Returns:
-            float: The mapped priority value.
+        Returns
+        -------
+        float : The mapped priority value.
         """
         return priority_base + (priority_offset * (2 - priority))
 
@@ -150,12 +155,10 @@ class Program:
         """
         Update the time share for the program.
 
-        Parameters:
-            current_timeshare (float):
-                The current time share used by the program in percent of the total
-
-        Returns:
-            None
+        Parameters
+        ----------
+        current_timeshare : float
+            The current time share used by the program in percent of the total
         """
         # Function that retrieves the current time used by the program
         self.time_share_current = current_timeshare
@@ -219,12 +222,16 @@ class Merit:
         """
         Evaluate the function with the given observation and additional arguments.
 
-        Parameters:
-            observation: The input observation.
-            **kwargs: Additional keyword arguments.
+        Parameters
+        ----------
+        observation : Observation
+            The input observation.
+        **kwargs
+            Additional keyword arguments.
 
-        Returns:
-            float: The evaluation result.
+        Returns
+        -------
+        float: The evaluation result.
         """
         # Combine custom parameters and runtime arguments, then call the function
         all_args = {**self.parameters, **kwargs}
@@ -263,13 +270,18 @@ class Target:
         """
         Maps the given priority value to a new value based on the priority base and offset.
 
-        Parameters:
-            priority (float): The original priority value.
-            priority_base (float): The base value for mapping the priority.
-            priority_offset (float): The offset value for mapping the priority.
+        Parameters
+        ----------
+        priority : float
+            The original priority value.
+        priority_base : float
+            The base value for mapping the priority.
+        priority_offset : float
+            The offset value for mapping the priority.
 
-        Returns:
-            float: The mapped priority value.
+        Returns
+        -------
+        float : The mapped priority value.
         """
         return priority_base + priority_offset * (2 - priority)
 
@@ -277,12 +289,10 @@ class Target:
         """
         Adds a list of Merit objects to the instance.
 
-        Parameters:
-            merits (List[Merit]): A list of Merit objects to be added.
-
-        Raises:
-            AssertionError: If merits is not a list of Merit objects.
-
+        Parameters
+        ----------
+        merits : List[Merit]
+            A list of Merit objects to be added
         """
         assert isinstance(merits, list), "merits must be a list of Merit objects"
         for merit in merits:
@@ -292,11 +302,10 @@ class Target:
         """
         Adds a merit to the corresponding list based on its merit type.
 
-        Parameters:
-            merit (Merit): The merit object to be added.
-
-        Returns:
-            None
+        Parameters
+        ----------
+        merit : Merit
+            The merit object to be added
         """
         if merit.merit_type == "fairness":
             self.fairness_merits.append(merit)
@@ -334,11 +343,16 @@ class Observation:
         """
         Initialize a new instance of the Observation class.
 
-        Parameters:
-            target (Target): The Target object representing the target being observed.
-            start_time (float): The start time of the observation in JD (Julian Date).
-            exposure_time (float): The duration of the observation in days.
-            night (Night): The Night object representing the night during which the observation takes place.
+        Parameters
+        ----------
+        target : Target
+            The Target object representing the target being observed.
+        start_time : float
+            The start time of the observation in JD (Julian Date).
+        exposure_time : float
+            The duration of the observation in days.
+        night : Night
+            The Night object representing the night during which the observation takes place.
         """
 
         self.target = target
@@ -431,8 +445,9 @@ class Observation:
         The fairness score is calculated by multiplying the priority of the target+program
         with the product of the evaluations of all fairness merits associated with the target.
 
-        Returns:
-            float: The fairness score of the target.
+        Returns
+        -------
+        float : The fairness score of the target.
         """
         priority = self.target.program.priority + self.target.priority
         merits = np.prod([merit.evaluate(self) for merit in self.target.fairness_merits])
@@ -454,11 +469,14 @@ class Observation:
         """
         Determines the feasibility of the target based on the veto merits.
 
-        Parameters:
-            verbose (bool): If True, prints the name and value of each veto merit.
+        Parameters
+        ----------
+        verbose : bool
+            If True, prints the name and value of each veto merit. Defaults to False
 
-        Returns:
-            float: The sensibility value, which is the product of all veto merit values.
+        Returns
+        -------
+        float: The sensibility value, which is the product of all veto merit values.
         """
         veto_merit_values = []
         for merit in self.target.veto_merits:
@@ -475,11 +493,14 @@ class Observation:
         """
         Calculate the separation between the current observation and the previous observation.
 
-        Parameters:
-            previous_obs (Observation): The previous observation.
+        Parameters
+        ----------
+        previous_obs : Observation
+            The previous observation.
 
-        Returns:
-            float: The separation between the current observation and the previous observation.
+        Returns
+        -------
+        float : The separation between the current observation and the previous observation.
         """
         prev_coords = (previous_obs.target.ra_deg, previous_obs.target.dec_deg)
         obs_coords = (self.target.ra_deg, self.target.dec_deg)
@@ -492,11 +513,10 @@ class Observation:
         Updates the start time of the observation based on the previous observation taking into
         account the overheads and instrument change.
 
-        Parameters:
-            previous_obs (Observation): The previous observation.
-
-        Returns:
-            None
+        Parameters
+        ----------
+        previous_obs : Observation
+            The previous observation
         """
         sep_deg = self.separation_calc(previous_obs)
         # FIX: This is a dummy slew time and inst change for now, replace with fetching from config file
@@ -522,11 +542,14 @@ class Observation:
         """
         Evaluates the score of the observation based on fairness, sensibility, and efficiency.
 
-        Parameters:
-            verbose (bool): If True, print the fairness, sensibility, efficiency, and rank score.
+        Parameters
+        ----------
+        verbose : bool
+            If True, print the fairness, sensibility, efficiency, and rank score.
 
-        Returns:
-            float: The score of the observation.
+        Returns
+        -------
+        float : The score of the observation.
         """
         # --- Fairness ---
         # Balances time allocation and priority
@@ -584,10 +607,21 @@ class Plan:
         self.evaluation = 0.0
 
     def add_observation(self, observation: Observation):
+        """
+        Add an observation to the plan
+
+        Paramters
+        ---------
+        obsrvation : Observation
+            The Observation object to be added to the plan
+        """
         self.observations.append(observation)
         return self
 
     def calculate_overhead(self):
+        """
+        Calculates the overheads for the entire plan, as well as the total observation time
+        """
         # Calculate the overheads for the plan
         # Go through all observation and count the time between the end of one observation and the
         # start of the next one
@@ -608,6 +642,11 @@ class Plan:
         self.observation_ratio = observation_time / available_obs_time
 
     def evaluate_plan(self) -> float:
+        """
+        Calculates the evaluation of the plan. This is the mean of the individual scores of all
+        observations times the observation ratio of the plan. This is to compensate between maximum
+        score of the observations but total observation time.
+        """
         # Evaluate the whole observation plan
         self.score = float(
             np.mean([obs.score for obs in self.observations]) if len(self) > 0 else 0
@@ -617,6 +656,7 @@ class Plan:
         return self.evaluation
 
     def print_stats(self):
+        """Print some stats of the plan"""
         self.evaluate_plan()
         self.calculate_overhead()
         print(f"Length = {len(self)}")
@@ -980,6 +1020,8 @@ class Plan:
         fig.show()
 
     def print_plan(self, save: bool = False, path: str = None):
+        """Print the plan itself with each observation. This includes the target, the program,
+        the start time of the observation and its exposure time."""
         lines = []
         lines.append(
             f"Plan for the night of {self.observations[0].night.night_date} (Times in UTC)"
