@@ -397,6 +397,23 @@ class Simulation:
         else:
             plt.close()
 
+        # Distribution of RA of targets within the night
+        plt.figure(figsize=(8, 5))
+        for plan in self.plans:
+            ras = []
+            for obs in plan.observations:
+                ras.append(obs.target.coords.ra.hour)
+            plt.hist(ras, bins=24, range=(0, 24), alpha=0.5, density=True)
+        plt.xlabel("RA (hours)")
+        plt.ylabel("Number of targets")
+        plt.title("Distribution of RA of targets within the night")
+        plt.tight_layout()
+        plt.savefig(f"{self.save_folder}/ra_distribution.png", dpi=200)
+        if display:
+            plt.show()
+        else:
+            plt.close()
+
         # TODO Calculate how well it followed the cadence constraints
 
     def run(self):
