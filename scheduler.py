@@ -19,7 +19,17 @@ def pickle_deepcopy(obj):
 def obslist_deepcopy(obslist):
     """
     An implementation of deepcoping a list of observations by creating new emtpy observations
-    and assigning the attributes of the original observations to the new ones.
+    and assigning the attributes of the original observations to the new ones. This is used
+    instead of copy.deepcopy or pickle_deepcopy because it is much faster.
+
+    Parameters
+    ----------
+    obslist : list of Observations
+        A list of Observation objects
+
+    Returns
+    -------
+    new_obslist : list of Observations
     """
     new_obslist = []
     for obs in obslist:

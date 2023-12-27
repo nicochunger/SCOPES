@@ -3,7 +3,7 @@ import itertools
 import re
 import uuid
 from datetime import date, datetime, timedelta
-from typing import Any, Callable, Dict, List
+from typing import Any, Callable, Dict, List, Union
 
 import astropy.units as u
 import matplotlib.colors as mcolors
@@ -16,21 +16,36 @@ from astropy.coordinates import SkyCoord
 from astropy.time import Time, TimeDelta
 from plotly.subplots import make_subplots
 
-import config
-
-# Define global observer location
-lasilla = Observer.at_site("lasilla")
-
 
 class Night:
     def __init__(self, night_date: date, observations_within: str, observer: Observer):
-        # How to calculate which night to take from the input time?
-        # For now just take the night of the input time
+        """
+        Initialize a new instance of the Night class.
+
+        Parameters
+        ----------
+        night_date : date
+            The date of the night.
+        observations_within : {"civil", "nautical", "astronomical"}
+            Within which twilight observations will be done. Can be one of "civil", "nautical",
+            or "astronomical".
+        observer : astroplan.Observer
+            An astroplan.Observer object that defines where the telescpe is located in the world.
+        """
         self.night_date = night_date
+        self.observations_within = observations_within
+        # Check if the observations_within is valid
+        valid_options = ["civil", "nautical", "astronomical"]
+        if self.observations_within not in valid_options:
+            raise ValueError(f"observations_within must be one of {valid_options}")
         self.observer = observer
+
+        # Define a middle of the night time to 4UT of the following day, which will always fall
+        # within the night time range
         self.night_middle = Time(
             datetime.combine(self.night_date, datetime.min.time()) + timedelta(days=1, hours=4)
         )
+        # Get the sunset and sunrise times for the night
         self.sunset = self.observer.sun_set_time(self.night_middle, which="previous")
         self.sunrise = self.observer.sun_rise_time(self.night_middle, which="next")
 
@@ -52,6 +67,7 @@ class Night:
         self.astronomical_morning = self.observer.twilight_morning_astronomical(
             self.night_middle, which="next"
         )
+
         # Time ranges for the different twilights
         self.time_range_solar = np.linspace(self.sunset, self.sunrise, 300)
         self.time_range_civil = np.linspace(self.civil_evening, self.civil_morning, 300)
@@ -67,11 +83,8 @@ class Night:
         self.nautical_morning = self.nautical_morning.jd
         self.astronomical_morning = self.astronomical_morning.jd
 
-        self.observations_within = observations_within
-        # Check if the observations_within is valid
-        valid_options = ["civil", "nautical", "astronomical"]
-        if self.observations_within not in valid_options:
-            raise ValueError(f"observations_within must be one of {valid_options}")
+        # Define the night time range based on the chosen twilight as the start and end times
+        # of the observable night
         if self.observations_within == "civil":
             self.obs_within_limits = np.array([self.civil_evening, self.civil_morning])
             self.night_time_range = self.time_range_civil
@@ -110,7 +123,7 @@ class Night:
 class Program:
     def __init__(
         self,
-        progID: int,
+        progID: Union[int, str],
         instrument: str,
         time_share_allocated: float,
         priority: int,
@@ -118,6 +131,29 @@ class Program:
         priority_offset: float = 0.1,
         plot_color: str = None,
     ):
+        """
+        Initialize a new instance of the Program class.
+
+        Parameters
+        ----------
+        progID : int or str
+            The program ID code.
+        instrument : str
+            The name of the instrument that the program uses.
+        time_share_allocated : float within [0, 1]
+            The time share allocated to the program as a percentage of total time.
+            Must be between 0 and 1.
+        priority : int
+            The priority of the program. Must be between 0 and 3, where 0 is the highest priority
+            and 3 is the lowest.
+        priority_base : int, optional
+            The base value for mapping the priority. Defaults to 1.
+        priority_offset : float, optional
+            The offset value for mapping the priority. Defaults to 0.1.
+        plot_color : str, optional
+            The color to use when plotting an observation of this program. Must be a valid hex code.
+            By default the colors will be chosen from the 'Set2' color pallette from matplotlib.
+        """
         self.progID = progID
         self.instrument = instrument
         self.priority = self.map_priority(priority, priority_base, priority_offset)
@@ -132,7 +168,7 @@ class Program:
         self.time_share_current = 0.0
         self.time_share_pct_diff = 0.0
 
-    def map_priority(self, priority: int, priority_base: int, priority_offset: float) -> float:
+    def map_priority(self, priority: int, priority_base: float, priority_offset: float) -> float:
         """
         Maps the given priority value to a new value based on the priority base and offset.
 
@@ -183,6 +219,21 @@ class Merit:
         merit_type: str,
         parameters: Dict[str, Any] = {},
     ):
+        """
+        Initialize a new instance of the Merit class.
+
+        Parameters
+        ----------
+        name : str
+            The name of the merit.
+        func : Callable
+            The function that computes the merit.
+        merit_type : {"fairness", "veto", "efficiency"}
+            The type of the merit. Can be one of "fairness", "veto", or "efficiency".
+        parameters : Dict[str, Any], optional
+            Custom parameters for the merit function. Defaults to {}. The keys of the dictionary
+            must match the names of the parameters of the function.
+        """
         self.name = name
         self.func = func  # The function that computes this merit
         self.description = self.func.__doc__
@@ -206,17 +257,21 @@ class Merit:
                 required_func_parameters.append(name)
             else:
                 optional_func_parameters.append(name)
-        assert (
-            required_func_parameters[0] == "observation"
-        ), "The first parameter has to be 'observation'"
-        assert set(required_func_parameters[1:]).issubset(set(self.parameters.keys())), (
-            f"The given parameters ({set(self.parameters.keys())}) don't match the "
-            "required parameters of the given function "
-            f"({set(required_func_parameters[1:])})"
-        )
-        assert set(self.parameters.keys()).issubset(
+        # Check that the first parameter is "observation"
+        if not (required_func_parameters[0] == "observation"):
+            raise KeyError("The first parameter has to be 'observation'")
+        # Check that the given parameters match the required parameters of the function
+        if not set(required_func_parameters[1:]).issubset(set(self.parameters.keys())):
+            raise ValueError(
+                f"The given parameters ({set(self.parameters.keys())}) don't match the "
+                "required parameters of the given function "
+                f"({set(required_func_parameters[1:])})"
+            )
+        # Check that there are no extra parameters that are not part of the function
+        if not set(self.parameters.keys()).issubset(
             set(required_func_parameters + optional_func_parameters)
-        ), "There are given parameters that are not part of the given function"
+        ):
+            raise KeyError("There are given parameters that are not part of the given function")
 
     def evaluate(self, observation, **kwargs) -> float:
         """
@@ -255,6 +310,27 @@ class Target:
         priority_base: float = 0,
         priority_offset: float = 0.05,
     ):
+        """
+        Initialize a new instance of the Target class.
+
+        Parameters
+        ----------
+        name : str
+            The name of the target.
+        prog : Program
+            The Program object that the target belongs to.
+        coords : SkyCoord
+            The coordinates of the target.
+        exposure_time : float
+            The exposure time of the observation in days.
+        priority : int
+            The priority of the target. Must be between 0 and 3, where 0 is the highest priority
+            and 3 is the lowest.
+        priority_base : float, optional
+            The base value for mapping the priority. Defaults to 0.
+        priority_offset : float, optional
+            The offset value for mapping the priority. Defaults to 0.05.
+        """
         self.name = name
         self.program = prog
         self.coords = coords
@@ -285,19 +361,6 @@ class Target:
         """
         return priority_base + priority_offset * (2 - priority)
 
-    def add_merits(self, merits: List[Merit]):
-        """
-        Adds a list of Merit objects to the instance.
-
-        Parameters
-        ----------
-        merits : List[Merit]
-            A list of Merit objects to be added
-        """
-        assert isinstance(merits, list), "merits must be a list of Merit objects"
-        for merit in merits:
-            self.add_merit(merit)
-
     def add_merit(self, merit: Merit):
         """
         Adds a merit to the corresponding list based on its merit type.
@@ -307,6 +370,8 @@ class Target:
         merit : Merit
             The merit object to be added
         """
+        if not isinstance(merit, Merit):
+            raise TypeError("merit must be of type Merit")
         if merit.merit_type == "fairness":
             self.fairness_merits.append(merit)
         elif merit.merit_type == "veto":
@@ -314,12 +379,27 @@ class Target:
         elif merit.merit_type == "efficiency":
             self.efficiency_merits.append(merit)
 
+    def add_merits(self, merits: List[Merit]):
+        """
+        Adds a list of Merit objects to the instance.
+
+        Parameters
+        ----------
+        merits : List[Merit]
+            A list of Merit objects to be added
+        """
+        if not isinstance(merits, list):
+            raise TypeError("merits must be a list")
+        if not all(isinstance(merit, Merit) for merit in merits):
+            raise TypeError("the objects in merits must be of type Merit")
+        for merit in merits:
+            self.add_merit(merit)
+
     def __str__(self):
         lines = [
             f"Target(Name: {self.name},",
             f"       Program: {self.program.progID},",
             f"       Coordinates: ({self.coords.ra.deg:.3f}, {self.coords.dec.deg:.3f}),",
-            # f"       Last observation: {self.last_obs},",
             f"       Priority: {self.priority},",
             f"       Fairness Merits: {self.fairness_merits},",
             f"       Veto Merits: {self.veto_merits},",
@@ -339,6 +419,8 @@ class Observation:
         start_time: float,
         exposure_time: float,
         night: Night,
+        tel_alt_lower_lim: float = 20.0,
+        tel_alt_upper_lim: float = 87.0,
     ):
         """
         Initialize a new instance of the Observation class.
@@ -353,17 +435,23 @@ class Observation:
             The duration of the observation in days.
         night : Night
             The Night object representing the night during which the observation takes place.
+        tel_alt_lower_lim : float, optional
+            The lower limit of the altitude set by the telescope hardware in degrees.
+            Defaults to 20.0.
+        tel_alt_upper_lim : float, optional
+            The upper limit of the altitude set by the telescope hardware in degrees.
+            Defaults to 87.0.
         """
-
         self.target = target
         self.start_time = start_time
         self.exposure_time = exposure_time
         self.end_time = self.start_time + self.exposure_time
         self.night = night
+        self.tel_alt_lower_lim = tel_alt_lower_lim
+        self.tel_alt_upper_lim = tel_alt_upper_lim
         self.score: float = 0.0  # Initialize score to zero
         self.veto_merits: List[float] = []  # List to store veto merits
-        self.unique_id = uuid.uuid4()
-        # self.fairness_value = self.fairness()
+        self.unique_id = uuid.uuid4()  # Unique ID for the observation instance
 
         # Create the AltAz frame for the observation during the night
         self.night_altaz_frame = self.target.coords.transform_to(
@@ -376,11 +464,6 @@ class Observation:
         # Update the altitudes and airmasses for the observation timerange
         self.update_alt_airmass()
         # Get the minimum altitude of the target during the night
-        # TODO Think about where the global default setting would live. Thinks like the observer,
-        # Telescope pointing limits, etc. These things should be set modifiable by the user, but
-        # also have a default value that can be used if the user doesn't want to set them.
-        tel_alt_lower_lim = config.scheduling_defaults["telescope elevation limits"][0]  # type: ignore
-        tel_alt_upper_lim = config.scheduling_defaults["telescope elevation limits"][1]  # type: ignore
         self.min_altitude = max(self.night_altitudes.min(), tel_alt_lower_lim)
         # Get the maximum altitude of the target during the night
         self.max_altitude = min(self.night_altitudes.max(), tel_alt_upper_lim)
@@ -455,7 +538,8 @@ class Observation:
 
     def update_alt_airmass(self):
         """
-        Update the altitude and airmass values based on the specified time range.
+        Update the altitude and airmass values throughout the observation based on the start time
+        and exposure time of the observation.
         """
         # Find indices
         night_range_jd = self.night.night_time_range.value
@@ -471,7 +555,7 @@ class Observation:
 
         Parameters
         ----------
-        verbose : bool
+        verbose : bool, optional
             If True, prints the name and value of each veto merit. Defaults to False
 
         Returns
@@ -530,7 +614,7 @@ class Observation:
         self.start_time = previous_obs.end_time + slew_time + cor_readout + inst_change
         self.end_time = self.start_time + self.exposure_time
         if self.end_time > self.night.obs_within_limits[1]:
-            # Set score to zero if observation goes beyond the end of the night
+            # Set score to 0 if observation goes beyond the end of the night
             self.score = 0.0
         else:
             # Update the time array becaue the start time changed
@@ -544,7 +628,7 @@ class Observation:
 
         Parameters
         ----------
-        verbose : bool
+        verbose : bool, optional
             If True, print the fairness, sensibility, efficiency, and rank score.
 
         Returns
@@ -558,11 +642,9 @@ class Observation:
 
         # --- Sensibility ---
         # Veto merits that check for observatbility
+        # This is calculated in the feasible method which is called every time the observation is
+        # considered for the schedule
         sensibility = self.sensibility_value
-        # if sensibility == 0.0:
-        #     # If sensibility is zero, then the observation is not feasible
-        #     self.score = 0.0
-        #     return self.score
 
         # --- Efficiency ---
         # Efficiency merits that check for scientific goal
@@ -597,11 +679,16 @@ class Observation:
     def __eq__(self, other):
         if not isinstance(other, Observation):
             return False
-        return self.unique_id == other.unique_id  # Or some other unique attribute
+        else:
+            return self.unique_id == other.unique_id
 
 
 class Plan:
     def __init__(self):
+        """
+        Initialize a new instance of the Plan class.
+        The Plan class is a container for Observation objects.
+        """
         self.observations = []
         self.score = 0.0
         self.evaluation = 0.0
@@ -646,6 +733,10 @@ class Plan:
         Calculates the evaluation of the plan. This is the mean of the individual scores of all
         observations times the observation ratio of the plan. This is to compensate between maximum
         score of the observations but total observation time.
+
+        Returns
+        -------
+        float : The evaluation of the plan.
         """
         # Evaluate the whole observation plan
         self.score = float(
@@ -668,7 +759,19 @@ class Plan:
         print(f"Observation ratio = {self.observation_ratio:.5f}")
 
     def plot(self, display: bool = True, save: bool = False, path: str = None):
-        """Plot the schedule for the night."""
+        """
+        Plot the schedule for the night.
+
+        Parameters
+        ----------
+        display : bool, optional
+            Option to display the plot. Defaults to True.
+        save : bool, optional
+            If True, and path is given, save the plot to a file. Defaults to False.
+        path : str, optional
+            The path to the file where the plot will be saved. Defaults to None. Ignored if save is
+            False.
+        """
         first_obs = self.observations[0]
 
         # Get sunset and sunrise times for this night
@@ -827,7 +930,7 @@ class Plan:
         if save:
             plt.tight_layout()
             if path is None:
-                raise ValueError("Path must be specified if save is True")
+                raise ValueError("path must be specified if save is True")
             else:
                 plt.savefig(path, dpi=300)
         if display:
@@ -1020,8 +1123,22 @@ class Plan:
         fig.show()
 
     def print_plan(self, save: bool = False, path: str = None):
-        """Print the plan itself with each observation. This includes the target, the program,
-        the start time of the observation and its exposure time."""
+        """
+        Print the plan itself with each observation. This includes the target, the program,
+        the start time of the observation and its exposure time.
+
+        Parameters
+        ----------
+        save : bool, optional
+            If True, and path is not None, save the plan to a file. Defaults to False.
+        path : str, optional
+            The path to the file where the plan will be saved. Defaults to None. Ignored if save is
+            False.
+
+        Returns
+        -------
+        str : The night's plan as a human readable text when printed.
+        """
         lines = []
         lines.append(
             f"Plan for the night of {self.observations[0].night.night_date} (Times in UTC)"

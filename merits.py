@@ -26,26 +26,36 @@ def time_share(
     ----------
     observation : Observation
         The Observation object to be used
-    alpha : float
-        The attack parameter for how sharp the sigmoid is
-    beta : float
-        The leeway parameter for how much difference in time use is allowed
-    delta : float
+    alpha : float, optional
+        The attack parameter for how sharp the sigmoid is. Defaults to 3.
+    beta : float, optional
+        The leeway parameter for how much difference in time use is allowed. Defaults to 5.
+    delta : float, optional
         The maximum percentage increase or decrease that will be applied if a program is over or
-        under its allocated time.
+        under its allocated time. Defaults to 0.1.
+
+    Returns
+    -------
+    float : The time share merit of the observation
     """
-    assert alpha > 0, "alpha for time_share merit must be greater than 0"
-    assert alpha % 2 == 1, "alpha for time_share merit must be an odd positive integer"
-    assert beta > 0.0, "beta for time_share merit must be greater than 0"
-    assert delta > 0.0, "delta for time_share merit must be greater than 0"
+    # Check that the parameters are valid
+    if alpha <= 0:
+        raise ValueError("alpha for time_share merit must be greater than 0")
+    if alpha % 2 == 0:
+        raise ValueError("alpha for time_share merit must be an odd positive integer")
+    if beta <= 0.0:
+        raise ValueError("beta for time_share merit must be greater than 0")
+    if delta <= 0.0:
+        raise ValueError("delta for time_share merit must be greater than 0")
+
     # Calculate the time share of the observation
     pct_diff = observation.target.program.time_share_pct_diff * 100
     exp_term = (pct_diff / beta) ** alpha
-    abs_exp_term = abs(exp_term)
 
-    # If the exponent is too big, cap it at 5 or -5
+    # If the exponent term is too big, cap it at 5 or -5
     # This is to limit the size of the exponent term and control the np.exp() function.
     # After 5 the merit already reaches its limits
+    abs_exp_term = abs(exp_term)
     if abs_exp_term > 5:
         sign = exp_term / abs_exp_term
         exp_term = sign * 5
@@ -65,15 +75,10 @@ def at_night(observation: Observation) -> float:
     observation : Observation
         The Observation object to be used
     """
-    start_time = observation.start_time
-    end_time = start_time + observation.exposure_time
-    if (
-        start_time >= observation.night.obs_within_limits[0]
-        and end_time <= observation.night.obs_within_limits[1]
-    ):
-        return 1.0
-    else:
-        return 0.0
+    return float(
+        observation.start_time >= observation.night.obs_within_limits[0]
+        and observation.end_time <= observation.night.obs_within_limits[1]
+    )
 
 
 def airmass(observation: Observation, max: float, alpha: float = 0.05) -> float:
@@ -88,10 +93,10 @@ def airmass(observation: Observation, max: float, alpha: float = 0.05) -> float:
     ----------
     observation : Observation
         The Observation object to be used
-    max : float
-        The maximum airmass allowed for this observation
-    alpha : float
-        A measure of the tolerance around the maximum airmass
+    max : float, optional
+        The maximum airmass allowed for this observation to be considered. Defaults to 2.0.
+    alpha : float, optional
+        A measure of the tolerance around the maximum airmass. Defaults to 0.05.
     """
     # Claculate airmass throughout the exposure of the observation
     if len(observation.obs_airmasses) == 0:
@@ -109,21 +114,30 @@ def airmass(observation: Observation, max: float, alpha: float = 0.05) -> float:
 
 def altitude(
     observation: Observation,
-    min: float = config.scheduling_defaults["telescope elevation limits"][0],  # type: ignore
-    max: float = config.scheduling_defaults["telescope elevation limits"][1],  # type: ignore
 ) -> float:
-    """Altitude constraint merit function"""
+    """
+    Altitude constraint merit function
+
+    Parameters
+    ----------
+    observation : Observation
+        The Observation object to be used
+    """
     # Claculate altitude throughout the exposure of the observation
     if len(observation.obs_altitudes) == 0:
         return 0.0
     else:
-        return (observation.obs_altitudes.min() > min) and (observation.obs_altitudes.max() < max)
+        return (observation.obs_altitudes.min() > observation.tel_alt_lower_lim) and (
+            observation.obs_altitudes.max() < observation.tel_alt_upper_lim
+        )
 
 
 def culmination(observation: Observation, verbose: bool = False) -> float:
-    """Culmination constraint merit function.
+    """
+    Culmination constraint merit function.
     This merit calculates the current height of the target and the proportion to the maximum height
-     it will reach during the current night."""
+    it will reach during the current night.
+    """
     # Calculate the current altitude of the target
     current_altitude = observation.obs_altitudes[0]
     # Calculate altitude proportional to available altitue range
@@ -228,6 +242,13 @@ def culmination_mapping(observation: Observation, verbose: bool = False) -> floa
     inckling that some random process will have to be used to solved this. So when you have to
     decide between a target that is setting or a target that is culminating, its chosen randomly.
     So on average things will balance out. But this is just a hunch, I have to think about it more.
+
+    Parameters
+    ----------
+    observation : Observation
+        The Observation object to be used
+    verbose : bool, optional
+        If True, print the calculated merit. Defaults to False.
     """
 
     time_prop = (observation.culmination_time - observation.night.culmination_window[0]) / (
@@ -239,6 +260,12 @@ def culmination_mapping(observation: Observation, verbose: bool = False) -> floa
 
     # Calculate the merit of the target at the mapping time
     merit = gaussian((peak_merit_time - observation.start_time), 4 / 24)
+
+    if verbose:
+        print(f"{time_prop = }")
+        print(f"{peak_merit_time = }")
+        print(f"{merit = }")
+
     return merit
 
 
@@ -268,8 +295,10 @@ def periodic_gaussian(
         The period of the Gaussian.
     sigma : float
         Measure of the width of each Gaussian.
-    phases : list
-        List of phases at which the gaussians should peak.
+    phases : list, optional
+        List of phases at which the gaussians should peak. Defaults to [0.0].
+    verbose : bool, optional
+        If True, print the calculated merit. Defaults to False.
     """
     merit = 0.0
     for phase in phases:
@@ -305,9 +334,12 @@ def time_critical(
     observation : Observation
         The observation object.
     start_time : float
-        The desired start time for the observation.
+        The desired start time for the observation. In Julian Date (JD).
     start_time_tolerance : float
-        The tolerance around the desired start time.
+        The tolerance around the desired start time in days.
+    steepness : float, optional
+        The steepness of the hyperbolic tangent function. A measure of how much time it takes the
+        function to go from 0 to the max value in days. Defaults to 0.0014 days, which is ~2 minutes.
     verbose : bool, optional
         If True, print the calculated merit. Defaults to False.
 
@@ -328,56 +360,6 @@ def gaussian(x, sigma):
     A simple Gaussian.
     """
     return np.exp(-0.5 * (x / sigma) ** 2)
-
-
-# def cadence(
-#     observation: Observation,
-#     delay: TimeDelta,
-#     alpha: float,
-#     beta: float = 0.5,
-#     verbose: bool = False,
-# ) -> float:
-#     """
-#     Calcualtes the merit for the desired cadence of observations.
-#     It uses a piecewise function depending if the target is under or over the cadence delay.
-#     If it hasn't reached the cadence yet, it uses a hyperbolic tanget function to slowly increase
-#     the merit up to 0.5 when it reached the cadence. Once its over the cadence its a root function
-#     that continuously increases as the observation is more overdue. The specific attack and release
-#     shapes can be set with the parameters alpha and beta.
-#     First the percent overdue is calculated by simply looking at how many days the target is before
-#     or after the desired cadence as a proportion of the cadence. Then the exact formulas are:
-
-#     When target is underdue:
-#     0.5*(tanh(pct_overdue/alpha)+1)
-
-#     When target is overdue:
-#     0.5+(pct_overdue/50*alpha)**beta
-
-
-#     Args:
-#         observation (Observation): The Observation object to be used
-#         delay (int): The value for the cadence in days
-#         alpha (float): The attack parameter for when the target is underdue
-#         beta (float): The release parameter for when the target is overdue
-
-#     Returns:
-#         score (float): The score of this merit
-#     """
-#     if verbose:
-#         print(f"{observation.start_time = }")
-#         print(f"{observation.target.last_obs = }")
-#         print(f"{delay.value = }")
-#     pct_overdue = (
-#         observation.start_time - (observation.target.last_obs + delay.value)
-#     ) / delay.value
-#     if pct_overdue <= 0:
-#         # Target has not reacehd the desired cadence yet
-#         # Use hyperbolic tangent to gradually increase merit as it approaches the set cadence
-#         return 0.5 * (np.tanh(pct_overdue / alpha) + 1)
-#     else:
-#         # Target has reacehd the cadence and is overdue
-#         # Use a root function to slowly keep increasing the merit as the observation is increasingly overdue
-#         return 0.5 + (pct_overdue / (50 * alpha)) ** beta
 
 
 # def moon_distance(observation: Observation, min: float = 30.0) -> float:
