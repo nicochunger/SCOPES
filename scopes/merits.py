@@ -1,11 +1,7 @@
 """ Definition of all the generic merit functions """
 
-# import astropy.units as u
 import numpy as np
-
-# from astropy.time import TimeDelta
-import config
-from class_definitions import Observation
+from scheduler_components import Observation
 
 
 def time_share(

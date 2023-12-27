@@ -2,8 +2,7 @@ from datetime import date
 
 import pytest
 
-# Assuming the provided class is available in 'my_module.py'
-from class_definitions import Night
+from scopes.scheduler_components import Night
 
 
 def test_init_invalid_observations_within():
@@ -33,6 +32,3 @@ def test_init_astronomical_observations_within():
     assert n.obs_within_limits[0] == n.astronomical_evening
     assert n.obs_within_limits[1] == n.astronomical_morning
     assert len(n.night_time_range) == 300
-
-
-# Note: Additional tests would be beneficial depending on the behavior and functionality of the external dependencies (Observer, Time, etc.)

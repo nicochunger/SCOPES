@@ -87,8 +87,8 @@ ipython_config.py
 *.pkl
 *.stats
 *.png
-simulation_results/*
-programs/*
+simulation/simulation_results
+programs
 
 # pyenv
 #   For a library or package, you might want to ignore these files since the code is

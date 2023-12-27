@@ -12,10 +12,8 @@ from astropy.coordinates import SkyCoord
 from astropy.time import Time
 from tqdm.auto import tqdm
 
-import merits
-
-# from scheduler import generateQ
-from class_definitions import Merit, Night, Observation, Plan, Target
+import scopes.merits as merits
+from scopes.scheduler_components import Merit, Night, Observation, Plan, Target
 
 
 class Simulation:

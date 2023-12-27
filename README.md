@@ -12,3 +12,7 @@ The package is installed with
 and then imported into python with
 
 `import scopes`
+
+## Full Documentation
+
+A more detailed documentation can be found in the `Documentation.pdf` file.

@@ -4,11 +4,9 @@ from dataclasses import dataclass, field
 from queue import PriorityQueue
 from typing import Any, List, Tuple, Union
 
-# from pymoo.algorithms.moo.nsga2 import NSGA2
-import numpy as np
 from astropy.time import Time
 
-from class_definitions import Observation, Plan
+from scopes.scheduler_components import Observation, Plan
 
 
 ## ----- HELPER FUNCTIONS ----- ##
