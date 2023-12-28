@@ -1,9 +1,9 @@
-# SCOPES
-## **S**ystem for **C**oordinating **O**bservational **P**lanning and **E**fficient **S**cheduling
+<p style="text-align: center"><img src="logo.png"></p>
 
-Here I will start to developed the core systems and algorithms for the new automatic observations scheduler of EULER, which I call SCOPES (System for Coordinating Observational Planning and Efficient Scheduling).
+<h1 style="text-align: center;">SCOPES</h1>
+<h2 style="text-align: center;"><strong>S</strong>ystem for <strong>C</strong>oordinating <strong>O</strong>bservational <strong>P</strong>lanning and <strong>E</strong>fficient <strong>S</strong>cheduling</h2>
 
-I will base the main system on the work of Rooyen et al. (2018)
+An automated scheduler for astronomical observations.
 
 The package is installed with
 
@@ -12,7 +12,3 @@ The package is installed with
 and then imported into python with
 
 `import scopes`
-
-## Full Documentation
-
-A more detailed documentation can be found in the `Documentation.pdf` file.
