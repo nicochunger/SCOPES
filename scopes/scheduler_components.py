@@ -30,7 +30,7 @@ class Night:
             Within which twilight observations will be done. Can be one of "civil", "nautical",
             or "astronomical".
         observer : astroplan.Observer
-            An astroplan.Observer object that defines where the telescpe is located in the world.
+            An astroplan.Observer object that defines where the telescope is located in the world.
         """
         self.night_date = night_date
         self.observations_within = observations_within
@@ -43,7 +43,8 @@ class Night:
         # Define a middle of the night time to 4UT of the following day, which will always fall
         # within the night time range
         self.night_middle = Time(
-            datetime.combine(self.night_date, datetime.min.time()) + timedelta(days=1, hours=4)
+            datetime.combine(self.night_date, datetime.min.time())
+            + timedelta(days=1, hours=4)
         )
         # Get the sunset and sunrise times for the night
         self.sunset = self.observer.sun_set_time(self.night_middle, which="previous")
@@ -60,7 +61,9 @@ class Night:
             self.night_middle, which="previous"
         )
         # And the same for the morning
-        self.civil_morning = self.observer.twilight_morning_civil(self.night_middle, which="next")
+        self.civil_morning = self.observer.twilight_morning_civil(
+            self.night_middle, which="next"
+        )
         self.nautical_morning = self.observer.twilight_morning_nautical(
             self.night_middle, which="next"
         )
@@ -71,7 +74,9 @@ class Night:
         # Time ranges for the different twilights
         self.time_range_solar = np.linspace(self.sunset, self.sunrise, 300)
         self.time_range_civil = np.linspace(self.civil_evening, self.civil_morning, 300)
-        self.time_range_nautical = np.linspace(self.nautical_evening, self.nautical_morning, 300)
+        self.time_range_nautical = np.linspace(
+            self.nautical_evening, self.nautical_morning, 300
+        )
         self.time_range_astronomical = np.linspace(
             self.astronomical_evening, self.astronomical_morning, 300
         )
@@ -89,7 +94,9 @@ class Night:
             self.obs_within_limits = np.array([self.civil_evening, self.civil_morning])
             self.night_time_range = self.time_range_civil
         elif self.observations_within == "nautical":
-            self.obs_within_limits = np.array([self.nautical_evening, self.nautical_morning])
+            self.obs_within_limits = np.array(
+                [self.nautical_evening, self.nautical_morning]
+            )
             self.night_time_range = self.time_range_nautical
         elif self.observations_within == "astronomical":
             self.obs_within_limits = np.array(
@@ -168,7 +175,9 @@ class Program:
         self.time_share_current = 0.0
         self.time_share_pct_diff = 0.0
 
-    def map_priority(self, priority: int, priority_base: float, priority_offset: float) -> float:
+    def map_priority(
+        self, priority: int, priority_base: float, priority_offset: float
+    ) -> float:
         """
         Maps the given priority value to a new value based on the priority base and offset.
 
@@ -271,7 +280,9 @@ class Merit:
         if not set(self.parameters.keys()).issubset(
             set(required_func_parameters + optional_func_parameters)
         ):
-            raise KeyError("There are given parameters that are not part of the given function")
+            raise KeyError(
+                "There are given parameters that are not part of the given function"
+            )
 
     def evaluate(self, observation, **kwargs) -> float:
         """
@@ -342,7 +353,9 @@ class Target:
         self.efficiency_merits: List[Merit] = []  # List of all efficiency merits
         self.veto_merits: List[Merit] = []  # List to store veto merits
 
-    def map_priority(self, priority: float, priority_base: float, priority_offset: float) -> float:
+    def map_priority(
+        self, priority: float, priority_base: float, priority_offset: float
+    ) -> float:
         """
         Maps the given priority value to a new value based on the priority base and offset.
 
@@ -484,7 +497,6 @@ class Observation:
         ].jd
 
         # Get the rise and set times of the target
-        start_time_astropy = Time(self.night.obs_within_limits[0], format="jd")
         start_time_astropy = self.night.night_time_range[0]
         if self.night_altitudes[0] > tel_alt_lower_lim:
             # If the target is already up by night start, the rise time is "previous"
@@ -533,7 +545,9 @@ class Observation:
         float : The fairness score of the target.
         """
         priority = self.target.program.priority + self.target.priority
-        merits = np.prod([merit.evaluate(self) for merit in self.target.fairness_merits])
+        merits = np.prod(
+            [merit.evaluate(self) for merit in self.target.fairness_merits]
+        )
         return priority * merits
 
     def update_alt_airmass(self):
@@ -589,7 +603,8 @@ class Observation:
         prev_coords = (previous_obs.target.ra_deg, previous_obs.target.dec_deg)
         obs_coords = (self.target.ra_deg, self.target.dec_deg)
         return np.sqrt(
-            (prev_coords[0] - obs_coords[0]) ** 2 + (prev_coords[1] - obs_coords[1]) ** 2
+            (prev_coords[0] - obs_coords[0]) ** 2
+            + (prev_coords[1] - obs_coords[1]) ** 2
         )
 
     def update_start_time(self, previous_obs):
@@ -602,6 +617,8 @@ class Observation:
         previous_obs : Observation
             The previous observation
         """
+        # TODO This entire section has to be redone to be adaptable. For now it is hardcoded
+        # but the user should be able to say how the overheads should be calculated.
         sep_deg = self.separation_calc(previous_obs)
         # FIX: This is a dummy slew time and inst change for now, replace with fetching from config file
         slew_rate = 2  # degrees per second
@@ -648,7 +665,9 @@ class Observation:
 
         # --- Efficiency ---
         # Efficiency merits that check for scientific goal
-        efficiency = np.mean([merit.evaluate(self) for merit in self.target.efficiency_merits])
+        efficiency = np.mean(
+            [merit.evaluate(self) for merit in self.target.efficiency_merits]
+        )
 
         # --- Rank Score ---
         # Calculate total rank score by taking the product of fairness, sensibility and efficiency
@@ -717,7 +736,9 @@ class Plan:
         for i, obs in enumerate(self.observations):
             observation_time += obs.exposure_time
         # Check that overhead and observation time add up to the total time
-        overhead_time = self.observations[-1].end_time - first_obs.start_time - observation_time
+        overhead_time = (
+            self.observations[-1].end_time - first_obs.start_time - observation_time
+        )
         available_obs_time = (
             first_obs.night.obs_within_limits[1] - first_obs.night.obs_within_limits[0]
         )
@@ -835,13 +856,25 @@ class Plan:
 
         # Plot shaded areas between sunset and civil, nautical, and astronomical evening
         y_range = np.arange(0, 91)
-        ax1.fill_betweenx(y_range, sunset.datetime, civil_evening, color="yellow", alpha=0.2)
-        ax1.fill_betweenx(y_range, civil_evening, nautical_evening, color="orange", alpha=0.2)
-        ax1.fill_betweenx(y_range, nautical_evening, astronomical_evening, color="red", alpha=0.2)
+        ax1.fill_betweenx(
+            y_range, sunset.datetime, civil_evening, color="yellow", alpha=0.2
+        )
+        ax1.fill_betweenx(
+            y_range, civil_evening, nautical_evening, color="orange", alpha=0.2
+        )
+        ax1.fill_betweenx(
+            y_range, nautical_evening, astronomical_evening, color="red", alpha=0.2
+        )
         # Same for the morning
-        ax1.fill_betweenx(y_range, civil_morning, sunrise.datetime, color="yellow", alpha=0.2)
-        ax1.fill_betweenx(y_range, nautical_morning, civil_morning, color="orange", alpha=0.2)
-        ax1.fill_betweenx(y_range, astronomical_morning, nautical_morning, color="red", alpha=0.2)
+        ax1.fill_betweenx(
+            y_range, civil_morning, sunrise.datetime, color="yellow", alpha=0.2
+        )
+        ax1.fill_betweenx(
+            y_range, nautical_morning, civil_morning, color="orange", alpha=0.2
+        )
+        ax1.fill_betweenx(
+            y_range, astronomical_morning, nautical_morning, color="red", alpha=0.2
+        )
         # Add text that have the words "civil", "nautical", and "astronomical".
         # These boxes are placed vertically at the times of each of them (both evening and morning)
         text_kwargs = {
@@ -851,11 +884,25 @@ class Plan:
             "fontsize": 8,
         }
 
-        ax1.text(sunset.datetime, 30.5, "Sunset", horizontalalignment="right", **text_kwargs)
-        ax1.text(civil_evening, 30.5, "Civil", horizontalalignment="right", **text_kwargs)
-        ax1.text(nautical_evening, 30.5, "Nautical", horizontalalignment="right", **text_kwargs)
         ax1.text(
-            astronomical_evening, 30.5, "Astronomical", horizontalalignment="right", **text_kwargs
+            sunset.datetime, 30.5, "Sunset", horizontalalignment="right", **text_kwargs
+        )
+        ax1.text(
+            civil_evening, 30.5, "Civil", horizontalalignment="right", **text_kwargs
+        )
+        ax1.text(
+            nautical_evening,
+            30.5,
+            "Nautical",
+            horizontalalignment="right",
+            **text_kwargs,
+        )
+        ax1.text(
+            astronomical_evening,
+            30.5,
+            "Astronomical",
+            horizontalalignment="right",
+            **text_kwargs,
         )
         ax1.text(
             (civil_morning + timedelta(minutes=3)),
@@ -916,7 +963,9 @@ class Plan:
         # Add a second axis to show the airmass
         # Set up airmass values and compute the corresponding altitudes for those airmass values
         desired_airmasses = np.arange(1.8, 0.9, -0.1)
-        corresponding_altitudes = list(90.0 - np.degrees(np.arccos(1.0 / desired_airmasses[:-1])))
+        corresponding_altitudes = list(
+            90.0 - np.degrees(np.arccos(1.0 / desired_airmasses[:-1]))
+        )
         corresponding_altitudes.append(90.0)
 
         # Create the secondary y-axis for Airmass
@@ -924,7 +973,9 @@ class Plan:
         ax2.set_ylim(ax1.get_ylim())
         # Set y-ticks at computed altitudes for desired airmasses
         ax2.set_yticks(corresponding_altitudes)
-        ax2.set_yticklabels(np.round(desired_airmasses, 2))  # Display the desired airmass values
+        ax2.set_yticklabels(
+            np.round(desired_airmasses, 2)
+        )  # Display the desired airmass values
         ax2.set_ylabel("Airmass")
         ax2.tick_params("y")
         if save:
@@ -985,7 +1036,8 @@ class Plan:
             # Time range and altitude calculations
             # TODO clean up this part by using existing variables in the obs objects
             time_range = Time(
-                np.linspace(obs.start_time, (obs.start_time + obs.exposure_time), 20), format="jd"
+                np.linspace(obs.start_time, (obs.start_time + obs.exposure_time), 20),
+                format="jd",
             ).datetime
             altitudes = obs.target.coords.transform_to(
                 night.observer.altaz(time=time_range)
@@ -1092,7 +1144,9 @@ class Plan:
 
         # Set up airmass values and compute the corresponding altitudes for those airmass values
         desired_airmasses = np.arange(1.8, 0.9, -0.1)
-        corresponding_altitudes = list(90.0 - np.degrees(np.arccos(1.0 / desired_airmasses[:-1])))
+        corresponding_altitudes = list(
+            90.0 - np.degrees(np.arccos(1.0 / desired_airmasses[:-1]))
+        )
         corresponding_altitudes.append(90.0)
 
         # Formatting x-axis and y-axis
@@ -1152,7 +1206,9 @@ class Plan:
             start_time = Time(obs.start_time, format="jd").datetime
             exp_time = TimeDelta(obs.exposure_time * u.day).to_datetime()
             string = f"{f'{i+1:>2}:':<6}"
-            string += f"{f'{obs.target.program.progID} {obs.target.program.instrument}':<12}"
+            string += (
+                f"{f'{obs.target.program.progID} {obs.target.program.instrument}':<12}"
+            )
             string += f"{obs.target.name:<20}"
             string += f"{start_time.strftime('%H:%M:%S'):<13}"
             string += f"{f'({exp_time})':<10}"

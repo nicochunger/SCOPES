@@ -1,7 +1,8 @@
 """ Definition of all the generic merit functions """
 
 import numpy as np
-from scheduler_components import Observation
+
+from .scheduler_components import Observation
 
 
 def time_share(
@@ -159,7 +160,9 @@ def egress(observation: Observation, verbose: bool = False) -> float:
     else:
         # Claculate altitude throughout the exposure of the observation
         range_observable = observation.set_time - observation.rise_time
-        observable_range_prop = (observation.start_time - observation.rise_time) / range_observable
+        observable_range_prop = (
+            observation.start_time - observation.rise_time
+        ) / range_observable
 
         if verbose:
             print(f"Current time: {observation.start_time}")
@@ -247,8 +250,11 @@ def culmination_mapping(observation: Observation, verbose: bool = False) -> floa
         If True, print the calculated merit. Defaults to False.
     """
 
-    time_prop = (observation.culmination_time - observation.night.culmination_window[0]) / (
-        observation.night.culmination_window[1] - observation.night.culmination_window[0]
+    time_prop = (
+        observation.culmination_time - observation.night.culmination_window[0]
+    ) / (
+        observation.night.culmination_window[1]
+        - observation.night.culmination_window[0]
     )
     peak_merit_time = observation.night.obs_within_limits[0] + time_prop * (
         observation.night.obs_within_limits[1] - observation.night.obs_within_limits[0]
@@ -301,7 +307,9 @@ def periodic_gaussian(
         merit += np.exp(
             -0.5
             * (
-                np.sin(np.pi * (observation.start_time - (epoch + phase * period)) / period)
+                np.sin(
+                    np.pi * (observation.start_time - (epoch + phase * period)) / period
+                )
                 / sigma
             )
             ** 2

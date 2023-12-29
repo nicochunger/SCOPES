@@ -1,66 +1,15 @@
-import pickle
 from copy import deepcopy
 from dataclasses import dataclass, field
 from queue import PriorityQueue
 from typing import Any, List, Tuple, Union
 
-from astropy.time import Time
-
-from scopes.scheduler_components import Observation, Plan
-
-
-## ----- HELPER FUNCTIONS ----- ##
-def pickle_deepcopy(obj):
-    return pickle.loads(pickle.dumps(obj, -1))
-
-
-def obslist_deepcopy(obslist):
-    """
-    An implementation of deepcoping a list of observations by creating new emtpy observations
-    and assigning the attributes of the original observations to the new ones. This is used
-    instead of copy.deepcopy or pickle_deepcopy because it is much faster.
-
-    Parameters
-    ----------
-    obslist : list of Observations
-        A list of Observation objects
-
-    Returns
-    -------
-    new_obslist : list of Observations
-    """
-    new_obslist = []
-    for obs in obslist:
-        new_obs = Observation.__new__(Observation)
-        new_obs.__dict__ = obs.__dict__.copy()
-        new_obslist.append(new_obs)
-    return new_obslist
-
-
-def get_observation_night(observation: Observation) -> Time:
-    """Return the night of an observation."""
-    sunset = observation.observer.sun_set_time(observation.start_time, which="previous")
-    return sunset.date()
-
-
-def update_start_times(observations: List[Observation], new_start_time: float):
-    """Update the start time of all observations in the list based on the previous observation."""
-    for obs in observations:
-        obs.start_time = new_start_time
-        obs.end_time = obs.start_time + obs.exposure_time
-        obs.update_alt_airmass()
-
-
-def update_start_from_prev(observations: List[Observation], previous_obs: Observation):
-    """Update the start time of all observations in the list based on the previous observation."""
-    for obs in observations:
-        obs.update_start_time(previous_obs)
+from .scheduler_components import Observation, Plan
 
 
 ## ----- SCHEDULERS ----- ##
-
-
 class Scheduler:
+    """Base class for all schedulers."""
+
     def obslist_deepcopy(self, obslist):
         """
         An implementation of deepcoping a list of observations by creating new emtpy observations
@@ -73,14 +22,18 @@ class Scheduler:
             new_obslist.append(new_obs)
         return new_obslist
 
-    def update_start_times(self, observations: List[Observation], new_start_time: float):
+    def update_start_times(
+        self, observations: List[Observation], new_start_time: float
+    ):
         """Update the start time of all observations in the list based on the previous observation."""
         for obs in observations:
             obs.start_time = new_start_time
             obs.end_time = obs.start_time + obs.exposure_time
             obs.update_alt_airmass()
 
-    def update_start_from_prev(self, observations: List[Observation], previous_obs: Observation):
+    def update_start_from_prev(
+        self, observations: List[Observation], previous_obs: Observation
+    ):
         """Update the start time of all observations in the list based on the previous observation."""
         for obs in observations:
             obs.update_start_time(previous_obs)
@@ -88,6 +41,7 @@ class Scheduler:
 
 class generateQ(Scheduler):
     def __init__(self, plan_start_time: float = None):
+        # TODO if plan_start_time is None, set it to the start of the night
         self.plan_start_time = plan_start_time
 
     # Basic forward scheduler, greedy search
@@ -102,7 +56,9 @@ class generateQ(Scheduler):
 
         # Set the lookahead distance to the number of available observations if not specified
         # Or to finish the night if there are more available observations than time in the night
-        if (lookahead_distance is not None) and (len(available_obs) <= lookahead_distance):
+        if (lookahead_distance is not None) and (
+            len(available_obs) <= lookahead_distance
+        ):
             raise ValueError(
                 f"Number of available observations ({len(available_obs)}) "
                 f"must be less than or equal to lookahead distance ({lookahead_distance})"
@@ -175,7 +131,7 @@ class generateQ(Scheduler):
         the observation that has the highest plan score at the end of the night, and that becomes
         the second observation of the plan. It repeats this process until the plan is full.
         """
-        remaining_obs = obslist_deepcopy(available_obs)
+        remaining_obs = self.obslist_deepcopy(available_obs)
         # Check if there is a plan start time
         if self.plan_start_time:
             self.update_start_times(remaining_obs, self.plan_start_time)
@@ -211,7 +167,7 @@ class generateQ(Scheduler):
 
             for obs in top_k_observations:
                 # Create a deep copy of available_obs
-                remaining_obs_copy = obslist_deepcopy(remaining_obs)
+                remaining_obs_copy = self.obslist_deepcopy(remaining_obs)
                 # Remove current obs from the copy
                 remaining_obs_copy.remove(obs)
 
@@ -241,7 +197,7 @@ class generateQ(Scheduler):
 
 
 # Dynamic programming scheduler using recursion
-class DPPlanner:
+class DPPlanner(Scheduler):
     def __init__(self):
         self.DP = {}
         self.total_counter = 0
@@ -296,7 +252,7 @@ class DPPlanner:
             new_plan = deepcopy(current_plan)
 
             # Create a copy of the remaining observations
-            remaining_copy = deepcopy(remaining_observations)
+            remaining_copy = self.obslist_deepcopy(remaining_observations)
             # Remove the observation
             remaining_copy.remove(obs)
 
@@ -307,10 +263,12 @@ class DPPlanner:
                 new_plan.add_observation(obs)
 
                 # Update the current time based on the end time of the added observation
-                update_start_from_prev(remaining_copy, obs)
+                self.update_start_from_prev(remaining_copy, obs)
 
                 # Recursive call to find best plan from this point forward
-                _, temp_plan = self.dp_recursion(remaining_copy, new_plan, max_plan_length, K)
+                _, temp_plan = self.dp_recursion(
+                    remaining_copy, new_plan, max_plan_length, K
+                )
 
                 # Evaluate this complete plan
                 score = temp_plan.evaluate_plan()
@@ -327,7 +285,7 @@ class DPPlanner:
 
 
 # Beam search scheduler
-class BeamSearchPlanner:
+class BeamSearchPlanner(Scheduler):
     def __init__(self, plan_start_time: float = None) -> None:
         self.total_counter = 0
         self.depth = 0
@@ -340,11 +298,14 @@ class BeamSearchPlanner:
         obs: Any = field(compare=False)
 
     def run(
-        self, initial_observations: List[Observation], max_plan_length: int = None, K: int = 5
+        self,
+        initial_observations: List[Observation],
+        max_plan_length: int = None,
+        K: int = 5,
     ) -> Plan:
         # Check if there is a plan start time
         if self.plan_start_time is not None:
-            update_start_times(initial_observations, self.plan_start_time)
+            self.update_start_times(initial_observations, self.plan_start_time)
         else:
             raise ValueError("Plan start time must be specified")
         if max_plan_length is None:
@@ -391,10 +352,10 @@ class BeamSearchPlanner:
                 new_plan.observations = current_plan.observations[:]
                 new_plan.add_observation(obs)
                 # Copy of remaining obs
-                new_remaining = obslist_deepcopy(remaining_observations)
+                new_remaining = self.obslist_deepcopy(remaining_observations)
                 new_remaining.remove(obs)
 
-                update_start_from_prev(new_remaining, obs)
+                self.update_start_from_prev(new_remaining, obs)
                 new_score = new_plan.evaluate_plan()
                 PQ_next.put(self.PrioritizedItem(-new_score, new_plan, new_remaining))
 
@@ -420,16 +381,16 @@ class BeamSearchPlanner:
 
 
 # Genetic algorithm scheduler
-class GeneticAlgorithm:
-    def __init__(self) -> None:
-        self.total_counter: int = 0
+# class GeneticAlgorithm:
+#     def __init__(self) -> None:
+#         self.total_counter: int = 0
 
-    def nsga2(
-        self,
-        available_observations: List[Observation],
-        max_plan_length: int,
-        population_size: int,
-        generations: int,
-    ):
-        """Non-dominated Sorting Genetic Algorithm II (NSGA-II) implementation"""
-        return None
+#     def nsga2(
+#         self,
+#         available_observations: List[Observation],
+#         max_plan_length: int,
+#         population_size: int,
+#         generations: int,
+#     ):
+#         """Non-dominated Sorting Genetic Algorithm II (NSGA-II) implementation"""
+#         return None

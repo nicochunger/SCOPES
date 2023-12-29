@@ -1,7 +1,8 @@
-<p style="text-align: center"><img src="logo.png"></p>
+![logo](logo.png)
 
-<h1 style="text-align: center;">SCOPES</h1>
-<h2 style="text-align: center;"><strong>S</strong>ystem for <strong>C</strong>oordinating <strong>O</strong>bservational <strong>P</strong>lanning and <strong>E</strong>fficient <strong>S</strong>cheduling</h2>
+# SCOPES
+
+## **S**ystem for **C**oordinating **O**bservational **P**lanning and **E**fficient **S**cheduling
 
 An automated scheduler for astronomical observations.
 
@@ -12,3 +13,7 @@ The package is installed with
 and then imported into python with
 
 `import scopes`
+
+# Examples
+
+There a python notebook with an example of how to use SCOPES in `scopes_example.ipynb`
