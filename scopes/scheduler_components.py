@@ -348,7 +348,7 @@ class Target:
         self.ra_deg = coords.ra.deg
         self.dec_deg = coords.dec.deg
         self.exposure_time = exposure_time
-        self.priority = self.map_priority(priority, priority_base, priority_offset)
+        self.priority = priority
         self.fairness_merits: List[Merit] = []  # List of all fairness merits
         self.efficiency_merits: List[Merit] = []  # List of all efficiency merits
         self.veto_merits: List[Merit] = []  # List to store veto merits
