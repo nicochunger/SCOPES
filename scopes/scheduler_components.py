@@ -133,9 +133,9 @@ class Program:
         progID: Union[int, str],
         instrument: str,
         time_share_allocated: float,
-        priority: int,
-        priority_base: int = 1,
-        priority_offset: float = 0.1,
+        priority: int = None,
+        # priority_base: int = 1,
+        # priority_offset: float = 0.1,
         plot_color: str = None,
     ):
         """
@@ -163,7 +163,7 @@ class Program:
         """
         self.progID = progID
         self.instrument = instrument
-        self.priority = self.map_priority(priority, priority_base, priority_offset)
+        self.priority = priority
         self.plot_color = plot_color
         assert bool(re.search(re.compile("^#([A-Fa-f0-9]{6})$"), self.plot_color)) or (
             self.plot_color is None
@@ -175,26 +175,26 @@ class Program:
         self.time_share_current = 0.0
         self.time_share_pct_diff = 0.0
 
-    def map_priority(
-        self, priority: int, priority_base: float, priority_offset: float
-    ) -> float:
-        """
-        Maps the given priority value to a new value based on the priority base and offset.
+    # def map_priority(
+    #     self, priority: int, priority_base: float, priority_offset: float
+    # ) -> float:
+    #     """
+    #     Maps the given priority value to a new value based on the priority base and offset.
 
-        Parameters
-        ----------
-        priority : float
-            The original priority value.
-        priority_base : float
-            The base value for mapping the priority.
-        priority_offset : float
-            The offset value for mapping the priority.
+    #     Parameters
+    #     ----------
+    #     priority : float
+    #         The original priority value.
+    #     priority_base : float
+    #         The base value for mapping the priority.
+    #     priority_offset : float
+    #         The offset value for mapping the priority.
 
-        Returns
-        -------
-        float : The mapped priority value.
-        """
-        return priority_base + (priority_offset * (2 - priority))
+    #     Returns
+    #     -------
+    #     float : The mapped priority value.
+    #     """
+    #     return priority_base + (priority_offset * (2 - priority))
 
     def update_time_share(self, current_timeshare: float):
         """
@@ -314,12 +314,12 @@ class Target:
     def __init__(
         self,
         name: str,
-        prog: Program,
+        program: Program,
         coords: SkyCoord,
         exposure_time: float,
-        priority: int,
-        priority_base: float = 0,
-        priority_offset: float = 0.05,
+        priority: int = None,
+        # priority_base: float = 0,
+        # priority_offset: float = 0.05,
     ):
         """
         Initialize a new instance of the Target class.
@@ -343,7 +343,7 @@ class Target:
             The offset value for mapping the priority. Defaults to 0.05.
         """
         self.name = name
-        self.program = prog
+        self.program = program
         self.coords = coords
         self.ra_deg = coords.ra.deg
         self.dec_deg = coords.dec.deg
@@ -353,26 +353,26 @@ class Target:
         self.efficiency_merits: List[Merit] = []  # List of all efficiency merits
         self.veto_merits: List[Merit] = []  # List to store veto merits
 
-    def map_priority(
-        self, priority: float, priority_base: float, priority_offset: float
-    ) -> float:
-        """
-        Maps the given priority value to a new value based on the priority base and offset.
+    # def map_priority(
+    #     self, priority: float, priority_base: float, priority_offset: float
+    # ) -> float:
+    #     """
+    #     Maps the given priority value to a new value based on the priority base and offset.
 
-        Parameters
-        ----------
-        priority : float
-            The original priority value.
-        priority_base : float
-            The base value for mapping the priority.
-        priority_offset : float
-            The offset value for mapping the priority.
+    #     Parameters
+    #     ----------
+    #     priority : float
+    #         The original priority value.
+    #     priority_base : float
+    #         The base value for mapping the priority.
+    #     priority_offset : float
+    #         The offset value for mapping the priority.
 
-        Returns
-        -------
-        float : The mapped priority value.
-        """
-        return priority_base + priority_offset * (2 - priority)
+    #     Returns
+    #     -------
+    #     float : The mapped priority value.
+    #     """
+    #     return priority_base + priority_offset * (2 - priority)
 
     def add_merit(self, merit: Merit):
         """
@@ -432,8 +432,6 @@ class Observation:
         start_time: float,
         exposure_time: float,
         night: Night,
-        tel_alt_lower_lim: float = 20.0,
-        tel_alt_upper_lim: float = 87.0,
     ):
         """
         Initialize a new instance of the Observation class.
@@ -460,8 +458,8 @@ class Observation:
         self.exposure_time = exposure_time
         self.end_time = self.start_time + self.exposure_time
         self.night = night
-        self.tel_alt_lower_lim = tel_alt_lower_lim
-        self.tel_alt_upper_lim = tel_alt_upper_lim
+        self.tel_alt_lower_lim = 10.0
+        self.tel_alt_upper_lim = 90.0
         self.score: float = 0.0  # Initialize score to zero
         self.veto_merits: List[float] = []  # List to store veto merits
         self.unique_id = uuid.uuid4()  # Unique ID for the observation instance
@@ -477,9 +475,9 @@ class Observation:
         # Update the altitudes and airmasses for the observation timerange
         self.update_alt_airmass()
         # Get the minimum altitude of the target during the night
-        self.min_altitude = max(self.night_altitudes.min(), tel_alt_lower_lim)
+        self.min_altitude = max(self.night_altitudes.min(), self.tel_alt_lower_lim)
         # Get the maximum altitude of the target during the night
-        self.max_altitude = min(self.night_altitudes.max(), tel_alt_upper_lim)
+        self.max_altitude = min(self.night_altitudes.max(), self.tel_alt_upper_lim)
 
         # Get time of maximum altitude
         # Create a time range for the culmination window (defined in the Night instance)
@@ -498,12 +496,12 @@ class Observation:
 
         # Get the rise and set times of the target
         start_time_astropy = self.night.night_time_range[0]
-        if self.night_altitudes[0] > tel_alt_lower_lim:
+        if self.night_altitudes[0] > self.tel_alt_lower_lim:
             # If the target is already up by night start, the rise time is "previous"
             self.rise_time = self.night.observer.target_rise_time(
                 start_time_astropy,
                 self.target.coords,
-                horizon=tel_alt_lower_lim * u.deg,
+                horizon=self.tel_alt_lower_lim * u.deg,
                 which="previous",
                 n_grid_points=10,
             ).jd
@@ -511,7 +509,7 @@ class Observation:
             self.set_time = self.night.observer.target_set_time(
                 start_time_astropy,
                 self.target.coords,
-                horizon=tel_alt_lower_lim * u.deg,
+                horizon=self.tel_alt_lower_lim * u.deg,
                 which="next",
                 n_grid_points=10,
             ).jd
@@ -520,7 +518,7 @@ class Observation:
             self.rise_time = self.night.observer.target_rise_time(
                 start_time_astropy,
                 self.target.coords,
-                horizon=tel_alt_lower_lim * u.deg,
+                horizon=self.tel_alt_lower_lim * u.deg,
                 which="next",
                 n_grid_points=10,
             ).jd
@@ -528,7 +526,7 @@ class Observation:
             self.set_time = self.night.observer.target_set_time(
                 start_time_astropy,
                 self.target.coords,
-                horizon=tel_alt_lower_lim * u.deg,
+                horizon=self.tel_alt_lower_lim * u.deg,
                 which="next",
                 n_grid_points=10,
             ).jd
@@ -544,11 +542,11 @@ class Observation:
         -------
         float : The fairness score of the target.
         """
-        priority = self.target.program.priority + self.target.priority
+        # priority = self.target.program.priority + self.target.priority
         merits = np.prod(
             [merit.evaluate(self) for merit in self.target.fairness_merits]
         )
-        return priority * merits
+        return merits
 
     def update_alt_airmass(self):
         """

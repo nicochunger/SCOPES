@@ -62,6 +62,56 @@ def time_share(
     return m
 
 
+def priority(
+    observation: Observation,
+    prog_base: float = 1.0,
+    prog_offset: float = 0.1,
+    tar_base: float = 0.0,
+    tar_offset: float = 0.05,
+) -> float:
+    """
+    Priority merit function. This is a fairness merit function to schedule based on priority.
+    In this implementation it assumes that the priority values given is between 0 and 3, where
+    0 is the highest priority and 3 is the lowest. This priority value is mapped to a base values
+    for the priority level of 2, and then an offset is added above or below that base value depending
+    if the priority is 3, 1, or 0. This is to convert this priority scale to something close to
+    0 or 1 usually.
+
+    The default values reflect a system where the program priorities are centered at 1, and then
+    the target priorities are centered at 0 which work as a modifier to the program priority. This
+    means that the priority of the program takes precedent, and then the priority of the targets
+    help to decide within the program which targets to observe first. There is a small overlap,
+    where a target with priority 0 can have a mapped priority higher than a target with priority 3
+    of the next highest priority program. At this stage we don't have to worry that this generates
+    more observations for the higher priority programs because that is balanced by the time share
+    merit.
+
+    Parameters
+    ----------
+    observation : Observation
+        The Observation object to be used
+    prog_base : float
+        The base value for the priority level of 2 for programs.
+    prog_offset : float
+        The offset to be added to the base value of programs for the priority levels of 3, 1 and 0.
+    tar_base : float
+        The base value for the priority level of 2 for targets.
+    tar_offset : float
+        The offset to be added to the base value of targets for the priority levels of 3, 1 and 0.
+    """
+    # Validate priority value for program and target exists
+    if observation.target.program.priority is None:
+        raise ValueError("Program priority value is None")
+    if observation.target.priority is None:
+        raise ValueError("Target priority value is None")
+
+    map_prog_priority = prog_base + prog_offset * (
+        2 - observation.target.program.priority
+    )
+    map_tar_priority = tar_base + tar_offset * (2 - observation.target.priority)
+    return map_prog_priority + map_tar_priority
+
+
 def at_night(observation: Observation) -> float:
     """
     Merit function that returns 1 if the observation is within the chosen night time limits, and
@@ -91,7 +141,7 @@ def airmass(observation: Observation, max: float, alpha: float = 0.05) -> float:
     observation : Observation
         The Observation object to be used
     max : float, optional
-        The maximum airmass allowed for this observation to be considered. Defaults to 2.0.
+        The maximum airmass allowed for this observation to be considered.
     alpha : float, optional
         A measure of the tolerance around the maximum airmass. Defaults to 0.05.
     """
@@ -111,6 +161,8 @@ def airmass(observation: Observation, max: float, alpha: float = 0.05) -> float:
 
 def altitude(
     observation: Observation,
+    min: float = 0,
+    max: float = 90,
 ) -> float:
     """
     Altitude constraint merit function
@@ -124,8 +176,8 @@ def altitude(
     if len(observation.obs_altitudes) == 0:
         return 0.0
     else:
-        return (observation.obs_altitudes.min() > observation.tel_alt_lower_lim) and (
-            observation.obs_altitudes.max() < observation.tel_alt_upper_lim
+        return (observation.obs_altitudes.min() > min) and (
+            observation.obs_altitudes.max() < max
         )
 
 
