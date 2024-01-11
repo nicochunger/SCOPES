@@ -316,8 +316,8 @@ class Target:
         name: str,
         program: Program,
         coords: SkyCoord,
-        exposure_time: float,
         priority: int = None,
+        # exposure_time: float,
         # priority_base: float = 0,
         # priority_offset: float = 0.05,
     ):
@@ -347,7 +347,7 @@ class Target:
         self.coords = coords
         self.ra_deg = coords.ra.deg
         self.dec_deg = coords.dec.deg
-        self.exposure_time = exposure_time
+        # self.exposure_time = exposure_time
         self.priority = priority
         self.fairness_merits: List[Merit] = []  # List of all fairness merits
         self.efficiency_merits: List[Merit] = []  # List of all efficiency merits
