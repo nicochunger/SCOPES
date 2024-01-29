@@ -4,16 +4,18 @@
 
 ## **S**ystem for **C**oordinating **O**bservational **P**lanning and **E**fficient **S**cheduling
 
-An automated scheduler for astronomical observations.
+SCOPES is an automated scheduler for astronomical observations.
 
-The package is installed with
+## Installation
+
+From the terminal, go the the folder where the repository was downloaded. Then run the following command to install the package:
 
 ```pip install .```
 
-and then imported into python with
+Then from within Python, the package is imported as
 
 `import scopes`
 
-# Examples
+## Examples
 
 There a python notebook with an example of how to use SCOPES in `scopes_example.ipynb`
