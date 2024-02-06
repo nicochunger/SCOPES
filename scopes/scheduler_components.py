@@ -132,10 +132,8 @@ class Program:
         self,
         progID: Union[int, str],
         instrument: str,
-        time_share_allocated: float,
         priority: int = None,
-        # priority_base: int = 1,
-        # priority_offset: float = 0.1,
+        time_share_allocated: float = 0.0,
         plot_color: str = None,
     ):
         """
@@ -163,38 +161,25 @@ class Program:
         """
         self.progID = progID
         self.instrument = instrument
+        # Check that priority value is valid
+        if priority < 0 or priority > 3:
+            raise ValueError("Priority must be between 0 and 3")
+        if not isinstance(priority, int):
+            raise TypeError("Priority must be an integer")
         self.priority = priority
+        # Check that plot_color is a valid hex color code
+        if not (
+            bool(re.search(re.compile("^#([A-Fa-f0-9]{6})$"), plot_color))
+            or (plot_color is None)
+        ):
+            raise ValueError("plot_color must be a valid hex color code")
         self.plot_color = plot_color
-        assert bool(re.search(re.compile("^#([A-Fa-f0-9]{6})$"), self.plot_color)) or (
-            self.plot_color is None
-        ), "plot_color must be a valid hex color code"
+        # Check that time_share_allocated is valid
+        if not (0 <= time_share_allocated <= 1):
+            raise ValueError("Time share must be between 0 and 1")
         self.time_share_allocated = time_share_allocated
-        assert (self.time_share_allocated >= 0.0) and (
-            self.time_share_allocated <= 1.0
-        ), "Time share must be between 0 and 1"
         self.time_share_current = 0.0
         self.time_share_pct_diff = 0.0
-
-    # def map_priority(
-    #     self, priority: int, priority_base: float, priority_offset: float
-    # ) -> float:
-    #     """
-    #     Maps the given priority value to a new value based on the priority base and offset.
-
-    #     Parameters
-    #     ----------
-    #     priority : float
-    #         The original priority value.
-    #     priority_base : float
-    #         The base value for mapping the priority.
-    #     priority_offset : float
-    #         The offset value for mapping the priority.
-
-    #     Returns
-    #     -------
-    #     float : The mapped priority value.
-    #     """
-    #     return priority_base + (priority_offset * (2 - priority))
 
     def update_time_share(self, current_timeshare: float):
         """
@@ -258,7 +243,7 @@ class Merit:
 
         # Consistency checks between the given func and parameters
         # It checks that the required parameters are all there, and that there are no extra
-        # paramters that are not part of the function
+        # parameters that are not part of the function
         required_func_parameters = []
         optional_func_parameters = []
         for name, param in inspect.signature(self.func).parameters.items():
@@ -316,10 +301,9 @@ class Target:
         name: str,
         program: Program,
         coords: SkyCoord,
+        exposure_time: float,
         priority: int = None,
-        # exposure_time: float,
-        # priority_base: float = 0,
-        # priority_offset: float = 0.05,
+        comment: str = "",
     ):
         """
         Initialize a new instance of the Target class.
@@ -337,42 +321,26 @@ class Target:
         priority : int
             The priority of the target. Must be between 0 and 3, where 0 is the highest priority
             and 3 is the lowest.
-        priority_base : float, optional
-            The base value for mapping the priority. Defaults to 0.
-        priority_offset : float, optional
-            The offset value for mapping the priority. Defaults to 0.05.
+        comment : str, optional
+            A comment about the target directed to the observer. Defaults to an empty string.
         """
         self.name = name
         self.program = program
         self.coords = coords
         self.ra_deg = coords.ra.deg
         self.dec_deg = coords.dec.deg
-        # self.exposure_time = exposure_time
+        self.exposure_time = exposure_time
+        # Check that priority value is valid
+        if (priority % 1) != 0:
+            raise TypeError("Priority must be an integer")
+        if (priority < 0) or (priority > 3):
+            raise ValueError("Priority must be between 0 and 3")
         self.priority = priority
+        self.comment = comment
+
         self.fairness_merits: List[Merit] = []  # List of all fairness merits
         self.efficiency_merits: List[Merit] = []  # List of all efficiency merits
         self.veto_merits: List[Merit] = []  # List to store veto merits
-
-    # def map_priority(
-    #     self, priority: float, priority_base: float, priority_offset: float
-    # ) -> float:
-    #     """
-    #     Maps the given priority value to a new value based on the priority base and offset.
-
-    #     Parameters
-    #     ----------
-    #     priority : float
-    #         The original priority value.
-    #     priority_base : float
-    #         The base value for mapping the priority.
-    #     priority_offset : float
-    #         The offset value for mapping the priority.
-
-    #     Returns
-    #     -------
-    #     float : The mapped priority value.
-    #     """
-    #     return priority_base + priority_offset * (2 - priority)
 
     def add_merit(self, merit: Merit):
         """
@@ -446,18 +414,15 @@ class Observation:
             The duration of the observation in days.
         night : Night
             The Night object representing the night during which the observation takes place.
-        tel_alt_lower_lim : float, optional
-            The lower limit of the altitude set by the telescope hardware in degrees.
-            Defaults to 20.0.
-        tel_alt_upper_lim : float, optional
-            The upper limit of the altitude set by the telescope hardware in degrees.
-            Defaults to 87.0.
         """
         self.target = target
         self.start_time = start_time
         self.exposure_time = exposure_time
         self.end_time = self.start_time + self.exposure_time
         self.night = night
+        # Telescope altitude limits. These are only used to calculate the minimum and maximum
+        # altitudes of the target during the night. The actual observational limits are set by the
+        # Altitude merit defined by the user.
         self.tel_alt_lower_lim = 10.0
         self.tel_alt_upper_lim = 90.0
         self.score: float = 0.0  # Initialize score to zero
@@ -542,11 +507,12 @@ class Observation:
         -------
         float : The fairness score of the target.
         """
-        # priority = self.target.program.priority + self.target.priority
-        merits = np.prod(
-            [merit.evaluate(self) for merit in self.target.fairness_merits]
-        )
-        return merits
+        if len(self.target.fairness_merits) == 0:
+            return 1.0
+        else:
+            return np.prod(
+                [merit.evaluate(self) for merit in self.target.fairness_merits]
+            )
 
     def update_alt_airmass(self):
         """
@@ -1057,17 +1023,13 @@ class Plan:
             if add_to_legend:
                 added_to_legend.add(program_id)
 
-            # # Hover text
-            # hover_text = (
-            #     f"{obs.target.name}\n\n{obs.target.program.instrument} {program_id}\n"
-            #     + f"Obs start:{Time(obs.start_time, format='jd').datetime}\n"
-            #     + f"Exp time:{TimeDelta(obs.exposure_time * u.day).to_datetime()}"
-            # )
+            # Hover text
             hovertemplate = (
                 f"<b>{obs.target.name}</b><br>"
                 + f"{obs.target.program.instrument} {program_id}<br><br>"
                 + f"Start time: {Time(obs.start_time, format='jd').datetime.strftime('%H:%M:%S %d-%m-%Y')}<br>"
-                + f"Exp time: {TimeDelta(obs.exposure_time * u.day).to_datetime()}"
+                + f"Exp time: {TimeDelta(obs.exposure_time * u.day).to_datetime()}<br>"
+                + f"Comment: {obs.target.comment}"
                 + "<extra></extra>"
             )
 
@@ -1198,7 +1160,7 @@ class Plan:
         lines.append("--------------------------------------------------\n")
         # lines.append(" #      Program ID      Target                  Start time   (Exp time)")
         lines.append(
-            f"{'#':<6}{'Program ID':<12}{'Target':<20}{'Start time':<13}{'(Exp time)':<10}"
+            f"{'#':<6}{'Program ID':<12}{'Target':<20}{'Start time':<13}{'(Exp time)':<12}{'Comment for the observer':<40}"
         )
         for i, obs in enumerate(self.observations):
             start_time = Time(obs.start_time, format="jd").datetime
@@ -1209,7 +1171,8 @@ class Plan:
             )
             string += f"{obs.target.name:<20}"
             string += f"{start_time.strftime('%H:%M:%S'):<13}"
-            string += f"{f'({exp_time})':<10}"
+            string += f"{f'({exp_time})':<12}"
+            string += f"{obs.target.comment:<40}"
             lines.append(string)
         plan_txt = "\n".join(lines)
         if save:

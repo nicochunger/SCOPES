@@ -18,7 +18,13 @@ from scopes.scheduler_components import Merit, Night, Observation, Plan, Target
 
 class Simulation:
     def __init__(
-        self, start_date, end_date, observer, night_within, scheduler_algorithm, keep_top_n=50
+        self,
+        start_date,
+        end_date,
+        observer,
+        night_within,
+        scheduler_algorithm,
+        keep_top_n=50,
     ):
         self.start_date = start_date
         self.end_date = end_date
@@ -27,7 +33,9 @@ class Simulation:
         self.unique_id = uuid4()
         self.scheduler = scheduler_algorithm
         self.keep_top_n = keep_top_n
-        self.save_folder = f"simulation_results/sim_{datetime.now().strftime('%Y-%m-%d_%H:%M:%S')}"
+        self.save_folder = (
+            f"simulation_results/sim_{datetime.now().strftime('%Y-%m-%d_%H:%M:%S')}"
+        )
         # Create the directory for saving the results
         Path(f"{self.save_folder}/plans").mkdir(parents=True, exist_ok=True)
         Path(f"{self.save_folder}/night_plots").mkdir(parents=True, exist_ok=True)
@@ -35,7 +43,9 @@ class Simulation:
         self.programs = {}
         # Define default merits
         self.default_merits = [
-            Merit("Airmass", merits.airmass, merit_type="veto", parameters={"max": 1.8}),
+            Merit(
+                "Airmass", merits.airmass, merit_type="veto", parameters={"max": 1.8}
+            ),
             Merit("Altitude", merits.altitude, merit_type="veto"),
             Merit("AtNight", merits.at_night, merit_type="veto"),
             # Merit("Culmination", merits.culmination, merit_type="efficiency"),
@@ -52,7 +62,9 @@ class Simulation:
         """
         self.nights = []
         for i in range((self.end_date - self.start_date).days + 1):
-            night = Night(self.start_date + timedelta(days=i), self.night_within, self.observer)
+            night = Night(
+                self.start_date + timedelta(days=i), self.night_within, self.observer
+            )
             self.nights.append(night)
         return self.nights
 
@@ -80,7 +92,7 @@ class Simulation:
                 prog,
                 coords=skycoord,
                 priority=tar["priority"],
-                exposure_time=tar["texp"] / 86400,
+                # exposure_time=tar["texp"] / 86400,
             )
 
             # Airmass merit
@@ -91,7 +103,9 @@ class Simulation:
             # Determine the chosen merits for the target
             if "period" in tar.index:
                 # Check that all four columns are present
-                if not np.isnan(tar[["period", "epoch", "phase1"]].values.astype(float)).any():
+                if not np.isnan(
+                    tar[["period", "epoch", "phase1"]].values.astype(float)
+                ).any():
                     # Remove the culmination merit
                     for merit in merit_list:
                         if merit.name == "CulMapping":
@@ -153,7 +167,12 @@ class Simulation:
             targets.append(target)
 
         # Add to the programs dictionary
-        self.programs[prog] = {"targets": targets, "file": file, "df": cat, "keep": cat_keep}
+        self.programs[prog] = {
+            "targets": targets,
+            "file": file,
+            "df": cat,
+            "keep": cat_keep,
+        }
 
     def determine_observability(self, night):
         """
@@ -168,11 +187,15 @@ class Simulation:
             # AtNightConstraint.twilight_nautical(),
         ]
         targets = []
-        time_range = Time([night.obs_within_limits[0], night.obs_within_limits[1]], format="jd")
+        time_range = Time(
+            [night.obs_within_limits[0], night.obs_within_limits[1]], format="jd"
+        )
         for prog in self.programs:
             tar_coords = [target.coords for target in self.programs[prog]["targets"]]
             # Determine the observability of the targets
-            keep = is_observable(constraints, night.observer, tar_coords, time_range=time_range)
+            keep = is_observable(
+                constraints, night.observer, tar_coords, time_range=time_range
+            )
 
             # Check if targets are due to be observed (cadence constraints)
             cat = self.programs[prog]["df"]
@@ -196,7 +219,8 @@ class Simulation:
                     cat.assign(last_obs=last_observation_dates)
                     .assign(
                         pct_overdue=lambda df: (
-                            night.obs_within_limits[0] - (df["last_obs"] + df["cadence"])
+                            night.obs_within_limits[0]
+                            - (df["last_obs"] + df["cadence"])
                         )
                         / df["cadence"]
                     )
@@ -227,7 +251,9 @@ class Simulation:
             targets += obs_targets
         return targets
 
-    def build_observations(self, targets: List[Target], night: Night) -> List[Observation]:
+    def build_observations(
+        self, targets: List[Target], night: Night
+    ) -> List[Observation]:
         """
         Builds a list of observations for a given list of targets, exposure time, and file name.
         """
@@ -297,7 +323,9 @@ class Simulation:
 
         # Update the time share of each program
         for i, prog in enumerate(self.programs):
-            new_night_history[f"{self.prog_names[i]}_allocated"] = [prog.time_share_allocated]
+            new_night_history[f"{self.prog_names[i]}_allocated"] = [
+                prog.time_share_allocated
+            ]
             try:
                 prog_time_used = relative_used_time[f"{self.prog_names[i]}"]
             except KeyError:
@@ -312,9 +340,9 @@ class Simulation:
             # After the first night, the night history will still be empty
             self.night_history = new_night_history.reset_index(drop=True)
         else:
-            self.night_history = pd.concat([self.night_history, new_night_history]).reset_index(
-                drop=True
-            )
+            self.night_history = pd.concat(
+                [self.night_history, new_night_history]
+            ).reset_index(drop=True)
 
     def plot_time_share(self, display=False):
         """
@@ -332,10 +360,14 @@ class Simulation:
         width = 0.35
 
         # Calculate the difference between used and allocated times
-        time_difference = [used - allocated for used, allocated in zip(used_time, allocated_time)]
+        time_difference = [
+            used - allocated for used, allocated in zip(used_time, allocated_time)
+        ]
 
         # Create subplots
-        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(8, 10))  # Adjust the figure size as needed
+        fig, (ax1, ax2) = plt.subplots(
+            2, 1, figsize=(8, 10)
+        )  # Adjust the figure size as needed
         # First subplot: Allocated vs Used Time
         ax1.bar(x - (width / 2), allocated_time, width, label="Allocated Time")
         ax1.bar(x + (width / 2), used_time, width, label="Used Time")
@@ -361,7 +393,10 @@ class Simulation:
 
         # Save the figure
         plt.tight_layout()
-        fig.savefig(f"{self.save_folder}/time_share/{night_data['night']}_time_share.png", dpi=200)
+        fig.savefig(
+            f"{self.save_folder}/time_share/{night_data['night']}_time_share.png",
+            dpi=200,
+        )
         if display:
             plt.show()
         else:
@@ -477,7 +512,9 @@ class Simulation:
         self.post_simulation_diagnostic()
 
         # Save the tracking tables to csv
-        self.observation_history.to_csv(f"{self.save_folder}/observation_history.csv", index=False)
+        self.observation_history.to_csv(
+            f"{self.save_folder}/observation_history.csv", index=False
+        )
         # Create a tempirary df with the timedeltas formatted as strings in the format HH:MM:SS
         temp_nh = self.night_history.copy()
         temp_nh["observation_time"] = temp_nh["observation_time"].apply(

@@ -1,6 +1,7 @@
 """ Definition of all the generic merit functions """
 
 import numpy as np
+from astropy.time import Time
 
 from .scheduler_components import Observation
 
@@ -411,82 +412,29 @@ def time_critical(
     return merit
 
 
+def moon_distance(observation: Observation, min: float = 30.0) -> float:
+    """
+    Moon distance constraint merit function
+    TODO: this entire merit function has to be tested.
+    """
+    # Create the AltAz frame for the moon
+    # TODO put this in the Night init.
+    # Can be done only once if calculated beforehand for the entire night
+    moon_altaz_frame = observation.night.observer.moon_altaz(
+        time=Time(observation.start_time, format="jd")
+    )
+    # Calculate moon distance throughout the exposure of the observation
+    range_moon_distance = observation.target.coords.separation(moon_altaz_frame).deg
+
+    # TODO: Implement a merit that takes into account the moon illumination and distance
+    if range_moon_distance.min() < min:
+        return 0.0
+    else:
+        return 1.0
+
+
 def gaussian(x, sigma):
     """
     A simple Gaussian.
     """
     return np.exp(-0.5 * (x / sigma) ** 2)
-
-
-# def moon_distance(observation: Observation, min: float = 30.0) -> float:
-#     """Moon distance constraint merit function"""
-# Create the AltAz frame for the moon
-# TODO put this in the Night init. Only has to be done once
-# moon_altaz_frame = observation.observer.moon_altaz(time=observation.time_array)
-# Claculate moon distance throughout the exposure of the observation
-# range_moon_distance = observation.target.coords.separation(moon_altaz_frame).deg
-
-# TODO: Implement a merit that takes into account the moon illumination
-# if range_moon_distance.min() < min:
-#     return 0.0
-# else:
-#     return 1.0
-
-
-# def moon_radial_velocity(observation: Observation, max: float = 100.0) -> float:
-#     """ Moon radial velocity constraint merit function """
-#     # Create the AltAz frame for the moon
-#     moon_altaz_frame = observation.observer.moon_altaz(time=observation.time_array)
-# TODO check this. How to calcualte the moon rv. This was recommended by copilot.
-# The attribute radial_velocity in AltAz object does inded exist, but Im not sure how
-# to set it correctly.
-# Claculate moon radial velocity throughout the exposure of the observation
-# range_moon_radial_velocity = observation.target.radial_velocity - moon_altaz_frame.radial_velocity
-
-# if range_moon_radial_velocity.max() > max:
-#     return 0.0
-# else:
-#     return 1.0
-
-
-# def gaussian(x, x0, P, s):
-#     """
-#     Gaussian merit function.
-
-#     Analytic expression: exp(-0.5(x/P)^2/s^2)
-
-#     Parameters
-#     ----------
-#     x : float
-#         The x value at which to evaluate the merit function.
-#     x0 : float
-#         Where the peak of the merit will be centered
-#     P : float
-#         The period of the Gaussian.
-#     s : float
-#         The standard deviation of the Gaussian.
-#     """
-
-#     return np.exp(-0.5 * (x / P) ** 2 / s**2)
-
-
-# def periodic_box(x, x0, P, width):
-#     """
-#     Periodic box merit function.
-
-#     It's just a box function that repeats with perio P.
-#     Parameters
-#     ----------
-#     x : float
-#         The x value at which to evaluate the merit function.
-#     x0 : float
-#         Where the peak of the merit will be centered
-#     P : float
-#         The period of the box functions.
-#     width : float
-#         The width of each box.
-#     """
-
-#     # TODO: Test if this is correct
-#     offset = (x - x0) % P
-#     return offset > -width / 2 or offset < width / 2
