@@ -505,7 +505,8 @@ class Observation:
 
         Returns
         -------
-        float : The fairness score of the target.
+        float
+            The fairness score of the target.
         """
         if len(self.target.fairness_merits) == 0:
             return 1.0
@@ -538,7 +539,8 @@ class Observation:
 
         Returns
         -------
-        float: The sensibility value, which is the product of all veto merit values.
+        float
+            The sensibility value, which is the product of all veto merit values.
         """
         veto_merit_values = []
         for merit in self.target.veto_merits:
@@ -562,7 +564,8 @@ class Observation:
 
         Returns
         -------
-        float : The separation between the current observation and the previous observation.
+        float
+            The separation between the current observation and the previous observation.
         """
         prev_coords = (previous_obs.target.ra_deg, previous_obs.target.dec_deg)
         obs_coords = (self.target.ra_deg, self.target.dec_deg)
@@ -614,7 +617,8 @@ class Observation:
 
         Returns
         -------
-        float : The score of the observation.
+        float
+            The score of the observation.
         """
         # --- Fairness ---
         # Balances time allocation and priority
@@ -667,30 +671,30 @@ class Observation:
 
 
 class Plan:
+    """
+    A container class for Observation objects representing a plan for scheduling observations.
+    """
+
     def __init__(self):
-        """
-        Initialize a new instance of the Plan class.
-        The Plan class is a container for Observation objects.
-        """
         self.observations = []
         self.score = 0.0
         self.evaluation = 0.0
 
     def add_observation(self, observation: Observation):
         """
-        Add an observation to the plan
+        Add an observation to the plan.
 
-        Paramters
-        ---------
-        obsrvation : Observation
-            The Observation object to be added to the plan
+        Parameters
+        ----------
+        observation : Observation
+            The Observation object to be added to the plan.
         """
         self.observations.append(observation)
         return self
 
     def calculate_overhead(self):
         """
-        Calculates the overheads for the entire plan, as well as the total observation time
+        Calculates the overheads for the entire plan, as well as the total observation time.
         """
         # Calculate the overheads for the plan
         # Go through all observation and count the time between the end of one observation and the
@@ -721,7 +725,8 @@ class Plan:
 
         Returns
         -------
-        float : The evaluation of the plan.
+        float
+            The evaluation of the plan.
         """
         # Evaluate the whole observation plan
         self.score = float(
@@ -732,7 +737,7 @@ class Plan:
         return self.evaluation
 
     def print_stats(self):
-        """Print some stats of the plan"""
+        """Prints some general information and statistics of the plan."""
         self.evaluate_plan()
         self.calculate_overhead()
         print(f"Length = {len(self)}")
@@ -954,7 +959,17 @@ class Plan:
             plt.close()
 
     def plot_interactive(self, save: bool = False, path: str = None):
-        """Plot the schedule for the night using Plotly."""
+        """
+        Makes an interactive plot of the Plan using Plotly.
+
+        Parameters
+        ----------
+        save : bool, optional
+            If True, and path is given, save the plot to a file. Defaults to False.
+        path : str, optional
+            The path to the file where the plot will be saved. Defaults to None. Ignored if save is
+            False.
+        """
         first_obs = self.observations[0]
 
         # Get sunset and sunrise times for this night
@@ -1151,7 +1166,8 @@ class Plan:
 
         Returns
         -------
-        str : The night's plan as a human readable text when printed.
+        str
+            The night's plan as a human readable text when printed.
         """
         lines = []
         lines.append(

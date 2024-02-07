@@ -14,6 +14,8 @@ class Scheduler:
         """
         An implementation of deepcoping a list of observations by creating new emtpy observations
         and assigning the attributes of the original observations to the new ones.
+
+        This is a workaround for the fact that deepcopy is very slow for these types of objects.
         """
         new_obslist = []
         for obs in obslist:

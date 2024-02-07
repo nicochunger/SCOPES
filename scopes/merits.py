@@ -118,7 +118,7 @@ def at_night(observation: Observation) -> float:
     Merit function that returns 1 if the observation is within the chosen night time limits, and
     0 otherwise.
 
-    Paramaters
+    Parameters
     ----------
     observation : Observation
         The Observation object to be used
@@ -202,69 +202,69 @@ def culmination(observation: Observation, verbose: bool = False) -> float:
     return altitude_prop
 
 
-def egress(observation: Observation, verbose: bool = False) -> float:
-    """Egress constraint merit function"""
-    if (observation.start_time < observation.rise_time) or (
-        observation.start_time > observation.set_time
-    ):
-        if verbose:
-            print("Observation starts before rise time or after set time, return 0.")
-        return 0.0
-    else:
-        # Claculate altitude throughout the exposure of the observation
-        range_observable = observation.set_time - observation.rise_time
-        observable_range_prop = (
-            observation.start_time - observation.rise_time
-        ) / range_observable
+# def egress(observation: Observation, verbose: bool = False) -> float:
+#     """Egress constraint merit function"""
+#     if (observation.start_time < observation.rise_time) or (
+#         observation.start_time > observation.set_time
+#     ):
+#         if verbose:
+#             print("Observation starts before rise time or after set time, return 0.")
+#         return 0.0
+#     else:
+#         # Claculate altitude throughout the exposure of the observation
+#         range_observable = observation.set_time - observation.rise_time
+#         observable_range_prop = (
+#             observation.start_time - observation.rise_time
+#         ) / range_observable
 
-        if verbose:
-            print(f"Current time: {observation.start_time}")
-            print(f"First time: {observation.rise_time}")
-            print(f"Last time: {observation.set_time}")
-            print(f"Observable range proportion: {observable_range_prop}")
-        # return 2 * (observable_range_prop - 0.5) ** 2
-        return 2 * abs(observable_range_prop - 0.5)
+#         if verbose:
+#             print(f"Current time: {observation.start_time}")
+#             print(f"First time: {observation.rise_time}")
+#             print(f"Last time: {observation.set_time}")
+#             print(f"Observable range proportion: {observable_range_prop}")
+#         # return 2 * (observable_range_prop - 0.5) ** 2
+#         return 2 * abs(observable_range_prop - 0.5)
 
 
-def rise_set(observation: Observation, verbose: bool = False) -> float:
-    """
-    Constraint that gives higher priority to targets that are about to set for the year, or that
-    are just rising for the year. This is to compensate for the culmination merit that gives priority
-    to targets that are culminating at the moment. But if a target is just setting or rising, it
-    doesn't culminate during the night ans so it will always have a lower priority than targets
-    that culminate during the night.
+# def rise_set(observation: Observation, verbose: bool = False) -> float:
+#     """
+#     Constraint that gives higher priority to targets that are about to set for the year, or that
+#     are just rising for the year. This is to compensate for the culmination merit that gives priority
+#     to targets that are culminating at the moment. But if a target is just setting or rising, it
+#     doesn't culminate during the night ans so it will always have a lower priority than targets
+#     that culminate during the night.
 
-    If the setting time of the target is within the first half of the night, or the rising time of
-    the target is within the last half of the night, then those targets will have a higher priority.
-    The cross time is calculates as the proportion of the night where either the set time or the
-    rise time is. Then the merit is calculated as:
+#     If the setting time of the target is within the first half of the night, or the rising time of
+#     the target is within the last half of the night, then those targets will have a higher priority.
+#     The cross time is calculates as the proportion of the night where either the set time or the
+#     rise time is. Then the merit is calculated as:
 
-    8*(cross_time-0.5)^4 + 1
+#     8*(cross_time-0.5)^4 + 1
 
-    This gives a higher merit if the target is about to set or just rising, and 1 if the target
-    is culminating during the night. (approximate, I'm not checking explicitly if the target is
-    culminating during the night, just if its rise or set time is within the first or last half).
-    """
-    # Calculate where the relevant cross time is for this target. Its to a time, but just the
-    # proportion of the night where either the set time or the rise time is.
-    cross_time = 0.0
-    night_start = observation.night.obs_within_limits[0]
-    night_end = observation.night.obs_within_limits[1]
-    night_mid_point = (night_start + night_end) / 2
-    if observation.set_time < night_mid_point:
-        cross_time = (observation.set_time - night_start) / (night_end - night_start)
-    elif observation.rise_time > night_mid_point:
-        cross_time = (observation.rise_time - night_start) / (night_end - night_start)
-    else:
-        cross_time = 0.5
+#     This gives a higher merit if the target is about to set or just rising, and 1 if the target
+#     is culminating during the night. (approximate, I'm not checking explicitly if the target is
+#     culminating during the night, just if its rise or set time is within the first or last half).
+#     """
+#     # Calculate where the relevant cross time is for this target. Its to a time, but just the
+#     # proportion of the night where either the set time or the rise time is.
+#     cross_time = 0.0
+#     night_start = observation.night.obs_within_limits[0]
+#     night_end = observation.night.obs_within_limits[1]
+#     night_mid_point = (night_start + night_end) / 2
+#     if observation.set_time < night_mid_point:
+#         cross_time = (observation.set_time - night_start) / (night_end - night_start)
+#     elif observation.rise_time > night_mid_point:
+#         cross_time = (observation.rise_time - night_start) / (night_end - night_start)
+#     else:
+#         cross_time = 0.5
 
-    # merit = 4 * (cross_time - 0.5) ** 2 + 1
-    merit = 2 * np.abs(cross_time - 0.5) + 1
-    if verbose:
-        print(f"{cross_time = }")
-        print(f"{merit = }")
+#     # merit = 4 * (cross_time - 0.5) ** 2 + 1
+#     merit = 2 * np.abs(cross_time - 0.5) + 1
+#     if verbose:
+#         print(f"{cross_time = }")
+#         print(f"{merit = }")
 
-    return merit
+#     return merit
 
 
 def culmination_mapping(observation: Observation, verbose: bool = False) -> float:
@@ -401,6 +401,7 @@ def time_critical(
         If True, print the calculated merit. Defaults to False.
 
     Returns:
+    --------
     float: The time criticality merit of the observation.
     """
     arg1 = (observation.start_time - (start_time - start_time_tolerance)) / steepness
@@ -416,6 +417,13 @@ def moon_distance(observation: Observation, min: float = 30.0) -> float:
     """
     Moon distance constraint merit function
     TODO: this entire merit function has to be tested.
+
+    Parameters
+    ----------
+    observation : Observation
+        The Observation object to be used
+    min : float, optional
+        The minimum distance to the moon in degrees. Defaults to 30.0.
     """
     # Create the AltAz frame for the moon
     # TODO put this in the Night init.
@@ -436,5 +444,12 @@ def moon_distance(observation: Observation, min: float = 30.0) -> float:
 def gaussian(x, sigma):
     """
     A simple Gaussian.
+
+    Parameters
+    ----------
+    x : float
+        The x value at which to evaluate the Gaussian.
+    sigma : float
+        Measure of the width of the Gaussian.
     """
     return np.exp(-0.5 * (x / sigma) ** 2)
