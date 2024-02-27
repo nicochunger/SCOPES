@@ -84,9 +84,9 @@ class Night:
         self.civil_evening = self.civil_evening.jd
         self.nautical_evening = self.nautical_evening.jd
         self.astronomical_evening = self.astronomical_evening.jd
-        self.civil_morning = self.civil_morning.jd
-        self.nautical_morning = self.nautical_morning.jd
         self.astronomical_morning = self.astronomical_morning.jd
+        self.nautical_morning = self.nautical_morning.jd
+        self.civil_morning = self.civil_morning.jd
 
         # Define the night time range based on the chosen twilight as the start and end times
         # of the observable night
@@ -107,6 +107,7 @@ class Night:
         # Calculate allowed culmination times for the night
         # FOR NOW: I will calculate this very simply by saying that allowed targets are those that
         # culminate within the night time range +- 3 hours
+        # TODO Change this to be more robust calcualted from the actual set of targets.
         offsets = np.array([-3, 3]) / 24  # in days
         self.culmination_window = self.obs_within_limits + offsets
 

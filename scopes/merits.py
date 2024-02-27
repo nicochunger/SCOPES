@@ -92,11 +92,11 @@ def priority(
     observation : Observation
         The Observation object to be used
     prog_base : float
-        The base value for the priority level of 2 for programs.
+        The base value for the priority level of 2, for programs.
     prog_offset : float
         The offset to be added to the base value of programs for the priority levels of 3, 1 and 0.
     tar_base : float
-        The base value for the priority level of 2 for targets.
+        The base value for the priority level of 2, for targets.
     tar_offset : float
         The offset to be added to the base value of targets for the priority levels of 3, 1 and 0.
     """
@@ -202,98 +202,32 @@ def culmination(observation: Observation, verbose: bool = False) -> float:
     return altitude_prop
 
 
-# def egress(observation: Observation, verbose: bool = False) -> float:
-#     """Egress constraint merit function"""
-#     if (observation.start_time < observation.rise_time) or (
-#         observation.start_time > observation.set_time
-#     ):
-#         if verbose:
-#             print("Observation starts before rise time or after set time, return 0.")
-#         return 0.0
-#     else:
-#         # Claculate altitude throughout the exposure of the observation
-#         range_observable = observation.set_time - observation.rise_time
-#         observable_range_prop = (
-#             observation.start_time - observation.rise_time
-#         ) / range_observable
-
-#         if verbose:
-#             print(f"Current time: {observation.start_time}")
-#             print(f"First time: {observation.rise_time}")
-#             print(f"Last time: {observation.set_time}")
-#             print(f"Observable range proportion: {observable_range_prop}")
-#         # return 2 * (observable_range_prop - 0.5) ** 2
-#         return 2 * abs(observable_range_prop - 0.5)
-
-
-# def rise_set(observation: Observation, verbose: bool = False) -> float:
-#     """
-#     Constraint that gives higher priority to targets that are about to set for the year, or that
-#     are just rising for the year. This is to compensate for the culmination merit that gives priority
-#     to targets that are culminating at the moment. But if a target is just setting or rising, it
-#     doesn't culminate during the night ans so it will always have a lower priority than targets
-#     that culminate during the night.
-
-#     If the setting time of the target is within the first half of the night, or the rising time of
-#     the target is within the last half of the night, then those targets will have a higher priority.
-#     The cross time is calculates as the proportion of the night where either the set time or the
-#     rise time is. Then the merit is calculated as:
-
-#     8*(cross_time-0.5)^4 + 1
-
-#     This gives a higher merit if the target is about to set or just rising, and 1 if the target
-#     is culminating during the night. (approximate, I'm not checking explicitly if the target is
-#     culminating during the night, just if its rise or set time is within the first or last half).
-#     """
-#     # Calculate where the relevant cross time is for this target. Its to a time, but just the
-#     # proportion of the night where either the set time or the rise time is.
-#     cross_time = 0.0
-#     night_start = observation.night.obs_within_limits[0]
-#     night_end = observation.night.obs_within_limits[1]
-#     night_mid_point = (night_start + night_end) / 2
-#     if observation.set_time < night_mid_point:
-#         cross_time = (observation.set_time - night_start) / (night_end - night_start)
-#     elif observation.rise_time > night_mid_point:
-#         cross_time = (observation.rise_time - night_start) / (night_end - night_start)
-#     else:
-#         cross_time = 0.5
-
-#     # merit = 4 * (cross_time - 0.5) ** 2 + 1
-#     merit = 2 * np.abs(cross_time - 0.5) + 1
-#     if verbose:
-#         print(f"{cross_time = }")
-#         print(f"{merit = }")
-
-#     return merit
-
-
 def culmination_mapping(observation: Observation, verbose: bool = False) -> float:
     """
-    I'm tentatively calling this method "culmination mapping," though I'm still brainstorming a
-    better name. It's a twist on the usual culmination merit concept. The key here is not just
-    focusing on targets at their highest sky point (pure culmination), but also considering those
-    that are rising or setting, which don't hit their culmination during the night.
+    ObservationEfficiency
 
-    Here's the issue with the current approach: a setting target gets a high culmination score only
-    at night's start, then it drops for the rest of the time. This means it's rarely chosen. My
-    method aims to address this by shifting the focus. Instead of zeroing in on the actual physical
-    culmination point, it considers all potential culmination points where a target is visible at
-    night (above the altitude limit). It then aligns these with the actual observation window times.
+    This merit is designed to make the scheduling of astronomical observations more efficient by
+    expanding the selection of observable stars beyond those reaching their culmination (highest
+    point in the sky) during the night. The normal Culmination merit misses out on stars that
+    culminate before the night begins or after it ends, even though these stars are still
+    observable at acceptable altitudes during the night.
 
-    So, a setting target scores high at night's beginning and then declines as it sets. However,
-    it's more likely to be picked because of its initial high score. A target reaching culmination
-    early in the night would hit its merit peak later on. Mid-night, the true culmination syncs
-    with this mapped culmination. And towards night's end, the modified merit peaks just before the
-    target's actual culmination point. This means we'll be observing targets slightly after their
-    culmination in the night's first half, around their peak in the middle, and a bit before their
-    culmination towards the end.
+    To address this, it uses an extended time range for calculating merits beyond the actual
+    observable hours of the night. This extended range includes the earliest culmination point of
+    any star still observable at the night's start and the latest culmination point of any star
+    still observable at the night's end.
 
-    Opinion:
-    I think this is still suboptimal. Because the targets that culminate early in the night will
-    never be observed at actual culmination. They will always be observed a bit after. I have an
-    inckling that some random process will have to be used to solved this. So when you have to
-    decide between a target that is setting or a target that is culminating, its chosen randomly.
-    So on average things will balance out. But this is just a hunch, I have to think about it more.
+    This extended timerange is then mapped to the actual night time range where observations will
+    be taken (typically within nautical or astronomical twilights). Its a simple one-to-one mapping
+    between two different time ranges. Then to calcualte the merit, the time at which the star
+    actually culminates is mapped from the larger timerange to the actual night range. That new
+    mapped time is when that star will peak in this merit function.
+
+    The method shifts observation priorities throughout the night—prioritizing setting stars early
+    on, stars near their culmination around the middle, and rising stars towards the end. This
+    method is a compromise between observing stars at their highest point but also giving priority
+    to stars that are setting or rising.
+
 
     Parameters
     ----------
@@ -385,6 +319,11 @@ def time_critical(
     function to gradually increase the merit as the observation approaches the desired start time.
     The center times of the increasing tanh and decresing tanh, are start_time - start_time_tolerance
     and start_time + start_time_tolerance, respectively.
+
+    TODO Rethink this merit and how to ensure that time critical observations are done without
+    failure. This merit is not enough to ensure that the observation is done at the desired time
+    as a previous observation can cover the entire tolerance range and thus block the time critical
+    observation from being done.
 
     Parameters
     ----------
