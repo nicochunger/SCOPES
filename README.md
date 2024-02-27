@@ -19,3 +19,7 @@ Then from within Python, the package is imported as
 ## Examples
 
 There a python notebook with an example of how to use SCOPES in `scopes_example.ipynb`
+
+## Documentation
+
+A full documentation of the package contents and classes can be found [here](https://scopes-docs.readthedocs.io/en/latest/)
