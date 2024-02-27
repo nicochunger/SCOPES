@@ -6,9 +6,14 @@ from typing import Any, List, Tuple, Union
 from .scheduler_components import Observation, Plan
 
 
-## ----- SCHEDULERS ----- ##
+## ----- BASE SCHEDULER CLASS ----- ##
 class Scheduler:
-    """Base class for all schedulers."""
+    """
+    Base class for all schedulers.
+
+    This class doesn't actually do any scheduling, but it sets up the necessary initializations
+    and provides some helper functions that are common to all schedulers.
+    """
 
     def obslist_deepcopy(self, obslist):
         """
@@ -41,6 +46,7 @@ class Scheduler:
             obs.update_start_time(previous_obs)
 
 
+## ----- SPECIFIC SCHEDULERS ----- ##
 class generateQ(Scheduler):
     def __init__(self, plan_start_time: float = None):
         # TODO if plan_start_time is None, set it to the start of the night
