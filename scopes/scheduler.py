@@ -3,7 +3,9 @@ from dataclasses import dataclass, field
 from queue import PriorityQueue
 from typing import Any, List, Tuple, Union
 
-from .scheduler_components import Observation, Plan
+from tqdm.auto import tqdm
+
+from .scheduler_components import Night, Observation, Plan
 
 
 ## ----- BASE SCHEDULER CLASS ----- ##
@@ -15,9 +17,38 @@ class Scheduler:
     and provides some helper functions that are common to all schedulers.
     """
 
+    def __init__(
+        self, night: Night, obs_list: List[Observation], plan_start_time: float
+    ) -> None:
+        print("Preparing observations for scheduling...")
+        if plan_start_time is None:
+            # If plan_start_time is None, set it to the start of the observable night
+            self.plan_start_time = night.obs_within_limits[0]
+        else:
+            self.plan_start_time = plan_start_time
+        self.night = night
+        # Check that the selected plan start time is within the night
+        if self.plan_start_time < night.obs_within_limits[0]:
+            raise ValueError(
+                f"plan_start_time is before the start of the observable night ({night.obs_within_limits[0]})."
+            )
+        if self.plan_start_time >= night.obs_within_limits[1]:
+            raise ValueError(
+                f"plan_start_time is after the end of the observable night ({night.obs_within_limits[1]})."
+            )
+        self.obs_list = obs_list
+        # Set the start of all obs
+        for obs in tqdm(self.obs_list):
+            # Set the night and start time
+            obs.set_night(self.night)
+            obs.set_start_time(self.plan_start_time)
+            # Run skypath to calculate the path of the object during the night
+            obs.skypath()
+            obs.update_alt_airmass()
+
     def obslist_deepcopy(self, obslist):
         """
-        An implementation of deepcoping a list of observations by creating new emtpy observations
+        An implementation of deepcopying a list of observations by creating new emtpy observations
         and assigning the attributes of the original observations to the new ones.
 
         This is a workaround for the fact that deepcopy is very slow for these types of objects.
@@ -45,12 +76,44 @@ class Scheduler:
         for obs in observations:
             obs.update_start_time(previous_obs)
 
+    def check_max_plan_length(self, max_plan_length):
+        """
+        Checks the validity of the maximum plan length.
+
+        Parameters
+        ----------
+        max_plan_length : int or None
+            The maximum plan length. If None, it is set to the number of observations.
+
+        Raises
+        ------
+        ValueError:
+            If max_plan_length is greater than the number of observations or if it is not a
+            positive integer or None.
+
+        Returns
+        -------
+        max_plan_length : int
+            The validated maximum plan length.
+        """
+        if max_plan_length is None:
+            max_plan_length = len(self.obs_list)
+        elif max_plan_length > len(self.obs_list):
+            raise ValueError(
+                "max_plan_length should be less than or equal to the number of observations."
+            )
+        if max_plan_length and max_plan_length <= 0:
+            raise ValueError("max_plan_length should be a positive integer or None.")
+        return max_plan_length
+
 
 ## ----- SPECIFIC SCHEDULERS ----- ##
 class generateQ(Scheduler):
-    def __init__(self, plan_start_time: float = None):
-        # TODO if plan_start_time is None, set it to the start of the night
-        self.plan_start_time = plan_start_time
+    def __init__(
+        self, night: Night, obs_list: List[Observation], plan_start_time: float = None
+    ):
+        # Call the parent class constructor
+        super().__init__(night, obs_list, plan_start_time)
 
     # Basic forward scheduler, greedy search
     def forwardP(
@@ -59,20 +122,22 @@ class generateQ(Scheduler):
         available_obs: List[Observation],
         lookahead_distance=None,
     ):
-        """Basic scheduler that simply continues a Plan from the starting observation by
-        sequentially choosing the highest scoring observation."""
+        """
+        Basic scheduler that simply continues a Plan from the starting observation by
+        sequentially choosing the highest scoring observation.
+        """
 
         # Set the lookahead distance to the number of available observations if not specified
         # Or to finish the night if there are more available observations than time in the night
         if (lookahead_distance is not None) and (
-            len(available_obs) <= lookahead_distance
+            len(available_obs) < lookahead_distance
         ):
             raise ValueError(
                 f"Number of available observations ({len(available_obs)}) "
-                f"must be less than or equal to lookahead distance ({lookahead_distance})"
+                f"must be more than or equal to lookahead distance ({lookahead_distance})"
             )
         elif lookahead_distance is None:
-            # Equivalent to planning until the end of night
+            # Equivalent to planning until the end of night or until no observations remain
             lookahead_distance = len(available_obs)
 
         # Initialize the Plan object according to if the starting codition is a Time or Observation
@@ -127,9 +192,9 @@ class generateQ(Scheduler):
 
         return observation_plan
 
-    def run(self, available_obs: List[Observation], max_plan_length=None, K: int = 5):
+    def run(self, max_plan_length=None, K: int = 5):
         """
-        Create a plan from a list of obsevations and a starting time. The way it works is by using
+        The way it works is by using
         the forwardP function to generate a plan from the starting time to the end of the night
         but at each step it does this for the top K observations, and it chooses the observation
         that has the highest plan score at the end of the night. That would become the first
@@ -137,23 +202,31 @@ class generateQ(Scheduler):
         top K observations runs forwardP until the end of the night, and assesses the plan score
         (but of the entire night, including the observation that was added before). It then chooses
         the observation that has the highest plan score at the end of the night, and that becomes
-        the second observation of the plan. It repeats this process until the plan is full.
+        the second observation of the plan. It repeats this process until the plan is full or it
+        reaches the maximum plan length.
+
+        Parameters
+        ----------
+        max_plan_length : int, optional
+            The maximum length of the plan, by default None meaning it will go until the end of
+            the night
+        K : int, optional
+            The number of top observations to consider at each step, by default 5
+
+        Returns
+        -------
+        Plan
+            The final plan
         """
-        remaining_obs = self.obslist_deepcopy(available_obs)
-        # Check if there is a plan start time
-        if self.plan_start_time:
-            self.update_start_times(remaining_obs, self.plan_start_time)
-        else:
-            raise ValueError("Plan start time must be specified")
+        print("Creating the Plan...")
         # Check max_plan_length
-        if max_plan_length and max_plan_length <= 0:
-            raise ValueError("max_plan_length should be a positive integer or None.")
-        elif max_plan_length is None:
-            max_plan_length = len(remaining_obs)
+        max_plan_length = self.check_max_plan_length(max_plan_length)
 
         # Create an empty plan to store the final results
         final_plan = Plan()
 
+        # Create a deep copy of the available observations
+        remaining_obs = self.obslist_deepcopy(self.obs_list)
         # Iterate until the plan is full or remaining_obs is empty
         while remaining_obs and (len(final_plan) < max_plan_length):
             # Score each observation to sort them and pick the top K
@@ -180,7 +253,11 @@ class generateQ(Scheduler):
                 remaining_obs_copy.remove(obs)
 
                 # Generate plan using forwardP with the modified list
-                plan = self.forwardP(obs, remaining_obs_copy)
+                plan = self.forwardP(
+                    obs,
+                    remaining_obs_copy,
+                    lookahead_distance=max_plan_length - len(final_plan) - 1,
+                )
 
                 # If the current plan is better than the best, update best_plan and best_observation
                 if not best_plan or (plan.score > best_plan.score):
@@ -200,13 +277,17 @@ class generateQ(Scheduler):
 
         # Evaluate the final plan
         final_plan.evaluate_plan()
+        print("Done!")
 
         return final_plan
 
 
 # Dynamic programming scheduler using recursion
 class DPPlanner(Scheduler):
-    def __init__(self):
+    def __init__(
+        self, night: Night, obs_list: List[Observation], plan_start_time=None
+    ) -> None:
+        super().__init__(night, obs_list, plan_start_time)
         self.DP = {}
         self.total_counter = 0
         self.saved_state_counter = 0
@@ -249,12 +330,18 @@ class DPPlanner(Scheduler):
 
         # Initialize variables to hold the best score and corresponding plan
         best_score = float("-inf")
-        best_plan: Plan = Plan()
+        best_plan = Plan()
 
-        # Loop through remaining observations to consider adding each to the plan
+        # Evaluate feasibility and score of each observation
+        for obs in remaining_observations:
+            obs.feasible()
+            obs.evaluate_score()
+        # Select the top K observations to consider
         top_k_observations = sorted(
-            remaining_observations, key=lambda x: x.evaluate_score(), reverse=True
+            remaining_observations, key=lambda x: x.score, reverse=True
         )[:K]
+
+        # Loop through the top K observations to consider adding each to the plan
         for obs in top_k_observations:
             # Create a deep copy of current_plan first
             new_plan = deepcopy(current_plan)
@@ -266,7 +353,7 @@ class DPPlanner(Scheduler):
 
             # Check if adding this observation is feasible
             # NOTE: I think this check can be omitted as its already done in top_k_observations
-            if obs.feasible():
+            if obs.score > 0.0:
                 # Add observation to the new plan
                 new_plan.add_observation(obs)
 
@@ -291,13 +378,31 @@ class DPPlanner(Scheduler):
 
         return best_score, best_plan
 
+    def run(
+        self,
+        max_plan_length: int = None,
+        K: int = 5,
+    ) -> Plan:
+        # Check max_plan_length
+        max_plan_length = self.check_max_plan_length(max_plan_length)
+
+        for obs in self.obs_list:
+            obs.feasible()
+
+        # Call the recursive function to find the best plan
+        _, best_plan = self.dp_recursion(self.obs_list, Plan(), max_plan_length, K)
+
+        return best_plan
+
 
 # Beam search scheduler
 class BeamSearchPlanner(Scheduler):
-    def __init__(self, plan_start_time: float = None) -> None:
+    def __init__(
+        self, night: Night, obs_list: List[Observation], plan_start_time=None
+    ) -> None:
+        super().__init__(night, obs_list, plan_start_time)
         self.total_counter = 0
         self.depth = 0
-        self.plan_start_time = plan_start_time
 
     @dataclass(order=True)
     class PrioritizedItem:
@@ -307,24 +412,18 @@ class BeamSearchPlanner(Scheduler):
 
     def run(
         self,
-        initial_observations: List[Observation],
         max_plan_length: int = None,
         K: int = 5,
     ) -> Plan:
-        # Check if there is a plan start time
-        if self.plan_start_time is not None:
-            self.update_start_times(initial_observations, self.plan_start_time)
-        else:
-            raise ValueError("Plan start time must be specified")
-        if max_plan_length is None:
-            max_plan_length = len(initial_observations)
+        # Check max_plan_length
+        max_plan_length = self.check_max_plan_length(max_plan_length)
 
         # Initialize two priority queues
         PQ_current: PriorityQueue = PriorityQueue()
         PQ_next: PriorityQueue = PriorityQueue()
 
         # Add initial state to the current priority queue
-        PQ_current.put(self.PrioritizedItem(0, Plan(), initial_observations))
+        PQ_current.put(self.PrioritizedItem(0, Plan(), self.obs_list))
 
         # Initialize best plan and best score to None and -inf
         best_plan: Plan = Plan()
@@ -335,8 +434,8 @@ class BeamSearchPlanner(Scheduler):
             # Retrieve the highest-score plan from the current priority queue
             pq_current_item = PQ_current.get()
             # current_score = pq_current_item.score
-            current_plan = pq_current_item.plan
-            remaining_observations = pq_current_item.obs
+            current_plan: Plan = pq_current_item.plan
+            remaining_observations: List[Observation] = pq_current_item.obs
 
             # Check stopping criteria
             if len(current_plan) >= max_plan_length:

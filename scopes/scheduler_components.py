@@ -302,7 +302,7 @@ class Target:
         name: str,
         program: Program,
         coords: SkyCoord,
-        exposure_time: float,
+        # exposure_time: float,
         priority: int = None,
         comment: str = "",
     ):
@@ -330,7 +330,7 @@ class Target:
         self.coords = coords
         self.ra_deg = coords.ra.deg
         self.dec_deg = coords.dec.deg
-        self.exposure_time = exposure_time
+        # self.exposure_time = exposure_time
         # Check that priority value is valid
         if (priority % 1) != 0:
             raise TypeError("Priority must be an integer")
@@ -398,9 +398,9 @@ class Observation:
     def __init__(
         self,
         target: Target,
-        start_time: float,
+        # start_time: float,
         exposure_time: float,
-        night: Night,
+        # night: Night,
     ):
         """
         Initialize a new instance of the Observation class.
@@ -417,10 +417,10 @@ class Observation:
             The Night object representing the night during which the observation takes place.
         """
         self.target = target
-        self.start_time = start_time
+        # self.start_time = start_time
         self.exposure_time = exposure_time
-        self.end_time = self.start_time + self.exposure_time
-        self.night = night
+        # self.end_time = self.start_time + self.exposure_time
+        # self.night = night
         # Telescope altitude limits. These are only used to calculate the minimum and maximum
         # altitudes of the target during the night. The actual observational limits are set by the
         # Altitude merit defined by the user.
@@ -430,6 +430,34 @@ class Observation:
         self.veto_merits: List[float] = []  # List to store veto merits
         self.unique_id = uuid.uuid4()  # Unique ID for the observation instance
 
+    def set_night(self, night: Night):
+        """
+        Set the night for the observation.
+
+        Parameters
+        ----------
+        night : Night
+            The Night object representing the night during which the observation takes place.
+        """
+        self.night = night
+
+    def set_start_time(self, start_time: float):
+        """
+        Set the start time of the observation.
+
+        Parameters
+        ----------
+        start_time : float
+            The start time of the observation in JD (Julian Date).
+        """
+        self.start_time = start_time
+        self.end_time = self.start_time + self.exposure_time
+
+    def skypath(self):
+        """
+        Calculate the skypath of the target during the night.
+        To be run at the start of the scheduling process.
+        """
         # Create the AltAz frame for the observation during the night
         self.night_altaz_frame = self.target.coords.transform_to(
             self.night.observer.altaz(time=self.night.night_time_range)
@@ -605,6 +633,7 @@ class Observation:
             # Update the time array becaue the start time changed
             self.update_alt_airmass()
             # Calculate new rank score based on new start time
+            self.feasible()
             self.evaluate_score()
 
     def evaluate_score(self, verbose: bool = False) -> float:
@@ -700,23 +729,32 @@ class Plan:
         # Calculate the overheads for the plan
         # Go through all observation and count the time between the end of one observation and the
         # start of the next one
-        first_obs = self.observations[0]
-        observation_time = 0.0  # first_obs.exposure_time
-        for i, obs in enumerate(self.observations):
-            observation_time += obs.exposure_time
-        # Check that overhead and observation time add up to the total time
-        overhead_time = (
-            self.observations[-1].end_time - first_obs.start_time - observation_time
-        )
-        available_obs_time = (
-            first_obs.night.obs_within_limits[1] - first_obs.night.obs_within_limits[0]
-        )
-        unused_time = available_obs_time - observation_time - overhead_time
-        self.observation_time = TimeDelta(observation_time * u.day).to_datetime()
-        self.overhead_time = TimeDelta(overhead_time * u.day).to_datetime()
-        self.unused_time = TimeDelta(unused_time * u.day).to_datetime()
-        self.overhead_ratio = overhead_time / observation_time
-        self.observation_ratio = observation_time / available_obs_time
+        if len(self) == 0:
+            self.observation_time = 0.0
+            self.overhead_time = 0.0
+            self.unused_time = 0.0
+            self.overhead_ratio = 0.0
+            self.observation_ratio = 0.0
+            return
+        else:
+            first_obs = self.observations[0]
+            observation_time = 0.0  # first_obs.exposure_time
+            for i, obs in enumerate(self.observations):
+                observation_time += obs.exposure_time
+            # Check that overhead and observation time add up to the total time
+            overhead_time = (
+                self.observations[-1].end_time - first_obs.start_time - observation_time
+            )
+            available_obs_time = (
+                first_obs.night.obs_within_limits[1]
+                - first_obs.night.obs_within_limits[0]
+            )
+            unused_time = available_obs_time - observation_time - overhead_time
+            self.observation_time = TimeDelta(observation_time * u.day).to_datetime()
+            self.overhead_time = TimeDelta(overhead_time * u.day).to_datetime()
+            self.unused_time = TimeDelta(unused_time * u.day).to_datetime()
+            self.overhead_ratio = overhead_time / observation_time
+            self.observation_ratio = observation_time / available_obs_time
 
     def evaluate_plan(self) -> float:
         """
