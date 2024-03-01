@@ -5,7 +5,7 @@ from typing import Any, List, Tuple, Union
 
 from tqdm.auto import tqdm
 
-from .scheduler_components import Night, Observation, Plan
+from .scheduler_components import Night, Observation, Overheads, Plan
 
 
 ## ----- BASE SCHEDULER CLASS ----- ##
@@ -18,8 +18,27 @@ class Scheduler:
     """
 
     def __init__(
-        self, night: Night, obs_list: List[Observation], plan_start_time: float
+        self,
+        night: Night,
+        obs_list: List[Observation],
+        overheads: Overheads,
+        plan_start_time: float,
     ) -> None:
+        """
+        Initializes the Scheduler class. Checks the validity of the plan start time and sets the
+        start time of all observations. Also runs the skypath function for each observation.
+
+        Parameters
+        ----------
+        night : Night
+            The night object that defines the observable time.
+        obs_list : List[Observation]
+            The list of observations to schedule.
+        overheads : Overheads
+            The overheads object that defines the transition times between observations.
+        plan_start_time : float
+            The start time of the plan. If None, it is set to the start of the observable night.
+        """
         print("Preparing observations for scheduling...")
         if plan_start_time is None:
             # If plan_start_time is None, set it to the start of the observable night
@@ -37,6 +56,7 @@ class Scheduler:
                 f"plan_start_time is after the end of the observable night ({night.obs_within_limits[1]})."
             )
         self.obs_list = obs_list
+        self.overheads = overheads
         # Set the start of all obs
         for obs in tqdm(self.obs_list):
             # Set the night and start time
@@ -45,36 +65,6 @@ class Scheduler:
             # Run skypath to calculate the path of the object during the night
             obs.skypath()
             obs.update_alt_airmass()
-
-    def obslist_deepcopy(self, obslist):
-        """
-        An implementation of deepcopying a list of observations by creating new emtpy observations
-        and assigning the attributes of the original observations to the new ones.
-
-        This is a workaround for the fact that deepcopy is very slow for these types of objects.
-        """
-        new_obslist = []
-        for obs in obslist:
-            new_obs = Observation.__new__(Observation)
-            new_obs.__dict__ = obs.__dict__.copy()
-            new_obslist.append(new_obs)
-        return new_obslist
-
-    def update_start_times(
-        self, observations: List[Observation], new_start_time: float
-    ):
-        """Update the start time of all observations in the list based on the previous observation."""
-        for obs in observations:
-            obs.start_time = new_start_time
-            obs.end_time = obs.start_time + obs.exposure_time
-            obs.update_alt_airmass()
-
-    def update_start_from_prev(
-        self, observations: List[Observation], previous_obs: Observation
-    ):
-        """Update the start time of all observations in the list based on the previous observation."""
-        for obs in observations:
-            obs.update_start_time(previous_obs)
 
     def check_max_plan_length(self, max_plan_length):
         """
@@ -106,14 +96,96 @@ class Scheduler:
             raise ValueError("max_plan_length should be a positive integer or None.")
         return max_plan_length
 
+    def obslist_deepcopy(self, obslist):
+        """
+        An implementation of deepcopying a list of observations by creating new emtpy observations
+        and assigning the attributes of the original observations to the new ones.
+
+        This is a workaround for the fact that deepcopy is very slow for these types of objects.
+
+        Parameters
+        ----------
+        obslist : List[Observation]
+            The list of observations to deepcopy
+        """
+        new_obslist = []
+        for obs in obslist:
+            new_obs = Observation.__new__(Observation)
+            new_obs.__dict__ = obs.__dict__.copy()
+            new_obslist.append(new_obs)
+        return new_obslist
+
+    def update_start_times(
+        self, observations: List[Observation], new_start_time: float
+    ):
+        """
+        Update the start time of all observations in the list based on defined start time.
+
+        Parameters
+        ----------
+        observations : List[Observation]
+            The list of observations to update
+        new_start_time : float
+            The new start time to set for all observations
+        """
+        for obs in observations:
+            obs.set_start_time(new_start_time)
+            obs.update_alt_airmass()
+
+    def update_start_from_prev(
+        self, observations: List[Observation], previous_obs: Observation
+    ):
+        """
+        Update the start time of all observations in the list based on the previous observation.
+
+        Parameters
+        ----------
+        observations : List[Observation]
+            The list of observations to update
+        previous_obs : Observation
+            The previous observation
+        """
+        for obs in observations:
+            self.transition(previous_obs, obs)
+
+    def transition(self, obs1: Observation, obs2: Observation):
+        """
+        Use the overheads class to calculate the transition time from obs1 to obs2. Then update
+        the start time of obs2 and recalculate the score of obs2.
+
+        Parameters
+        ----------
+        obs1 : Observation
+            The first observation
+        obs2 : Observation
+            The second observation
+        """
+        total_overhead = self.overheads.calculate_transition(obs1, obs2)
+        # Update the start time of obs2
+        obs2.set_start_time(obs1.end_time + total_overhead)
+        # Recalculate the score of obs2
+        if obs2.end_time > self.night.obs_within_limits[1]:
+            # Set score to 0 if observation goes beyond the end of the night
+            obs2.score = 0.0
+        else:
+            # Update the time array becaue the start time changed
+            obs2.update_alt_airmass()
+            # Calculate new rank score based on new start time
+            obs2.feasible()
+            obs2.evaluate_score()
+
 
 ## ----- SPECIFIC SCHEDULERS ----- ##
 class generateQ(Scheduler):
     def __init__(
-        self, night: Night, obs_list: List[Observation], plan_start_time: float = None
+        self,
+        night: Night,
+        obs_list: List[Observation],
+        overheads: Overheads,
+        plan_start_time: float = None,
     ):
         # Call the parent class constructor
-        super().__init__(night, obs_list, plan_start_time)
+        super().__init__(night, obs_list, overheads, plan_start_time)
 
     # Basic forward scheduler, greedy search
     def forwardP(
@@ -285,9 +357,13 @@ class generateQ(Scheduler):
 # Dynamic programming scheduler using recursion
 class DPPlanner(Scheduler):
     def __init__(
-        self, night: Night, obs_list: List[Observation], plan_start_time=None
+        self,
+        night: Night,
+        obs_list: List[Observation],
+        overheads: Overheads,
+        plan_start_time=None,
     ) -> None:
-        super().__init__(night, obs_list, plan_start_time)
+        super().__init__(night, obs_list, overheads, plan_start_time)
         self.DP = {}
         self.total_counter = 0
         self.saved_state_counter = 0
@@ -398,9 +474,13 @@ class DPPlanner(Scheduler):
 # Beam search scheduler
 class BeamSearchPlanner(Scheduler):
     def __init__(
-        self, night: Night, obs_list: List[Observation], plan_start_time=None
+        self,
+        night: Night,
+        obs_list: List[Observation],
+        overheads: Overheads,
+        plan_start_time=None,
     ) -> None:
-        super().__init__(night, obs_list, plan_start_time)
+        super().__init__(night, obs_list, overheads, plan_start_time)
         self.total_counter = 0
         self.depth = 0
 

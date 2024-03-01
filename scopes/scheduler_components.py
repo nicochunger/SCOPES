@@ -465,6 +465,7 @@ class Observation:
 
         # Get the altitudes and airmasses of the target during the night
         self.night_altitudes = self.night_altaz_frame.alt.deg
+        self.night_azimuths = self.night_altaz_frame.az.deg
         self.night_airmasses = self.night_altaz_frame.secz
         # Update the altitudes and airmasses for the observation timerange
         self.update_alt_airmass()
@@ -582,59 +583,38 @@ class Observation:
         self.sensibility_value = np.prod(veto_merit_values)
         return self.sensibility_value  # type: ignore
 
-    def separation_calc(self, previous_obs):
-        """
-        Calculate the separation between the current observation and the previous observation.
+    # def update_start_time(self, previous_obs):
+    #     """
+    #     Updates the start time of the observation based on the previous observation taking into
+    #     account the overheads and instrument change.
 
-        Parameters
-        ----------
-        previous_obs : Observation
-            The previous observation.
-
-        Returns
-        -------
-        float
-            The separation between the current observation and the previous observation.
-        """
-        prev_coords = (previous_obs.target.ra_deg, previous_obs.target.dec_deg)
-        obs_coords = (self.target.ra_deg, self.target.dec_deg)
-        return np.sqrt(
-            (prev_coords[0] - obs_coords[0]) ** 2
-            + (prev_coords[1] - obs_coords[1]) ** 2
-        )
-
-    def update_start_time(self, previous_obs):
-        """
-        Updates the start time of the observation based on the previous observation taking into
-        account the overheads and instrument change.
-
-        Parameters
-        ----------
-        previous_obs : Observation
-            The previous observation
-        """
-        # TODO This entire section has to be redone to be adaptable. For now it is hardcoded
-        # but the user should be able to say how the overheads should be calculated.
-        sep_deg = self.separation_calc(previous_obs)
-        # FIX: This is a dummy slew time and inst change for now, replace with fetching from config file
-        slew_rate = 2  # degrees per second
-        slew_time = (sep_deg / slew_rate) / 86400  # in days
-        cor_readout = 0.0002315  # in days
-        inst_change = 0.0
-        if previous_obs.target.program.instrument != self.target.program.instrument:
-            # If the instrument is different, then there is a configuration time
-            inst_change = 0.00196759  # 170 seconds in days
-        self.start_time = previous_obs.end_time + slew_time + cor_readout + inst_change
-        self.end_time = self.start_time + self.exposure_time
-        if self.end_time > self.night.obs_within_limits[1]:
-            # Set score to 0 if observation goes beyond the end of the night
-            self.score = 0.0
-        else:
-            # Update the time array becaue the start time changed
-            self.update_alt_airmass()
-            # Calculate new rank score based on new start time
-            self.feasible()
-            self.evaluate_score()
+    #     Parameters
+    #     ----------
+    #     previous_obs : Observation
+    #         The previous observation
+    #     """
+    #     # TODO This entire section has to be redone to be adaptable. For now it is hardcoded
+    #     # but the user should be able to say how the overheads should be calculated.
+    #     sep_deg = self.separation_calc(previous_obs)
+    #     # FIX: This is a dummy slew time and inst change for now, replace with fetching from config file
+    #     slew_rate = 2  # degrees per second
+    #     slew_time = (sep_deg / slew_rate) / 86400  # in days
+    #     cor_readout = 0.0002315  # in days
+    #     inst_change = 0.0
+    #     if previous_obs.target.program.instrument != self.target.program.instrument:
+    #         # If the instrument is different, then there is a configuration time
+    #         inst_change = 0.00196759  # 170 seconds in days
+    #     self.start_time = previous_obs.end_time + slew_time + cor_readout + inst_change
+    #     self.end_time = self.start_time + self.exposure_time
+    #     if self.end_time > self.night.obs_within_limits[1]:
+    #         # Set score to 0 if observation goes beyond the end of the night
+    #         self.score = 0.0
+    #     else:
+    #         # Update the time array becaue the start time changed
+    #         self.update_alt_airmass()
+    #         # Calculate new rank score based on new start time
+    #         self.feasible()
+    #         self.evaluate_score()
 
     def evaluate_score(self, verbose: bool = False) -> float:
         """
@@ -700,6 +680,132 @@ class Observation:
             return self.unique_id == other.unique_id
 
 
+class Overheads:
+    """
+    A class for managing the calculation of the overheads between two consecutive observations.
+
+    This class handles the calculation of various overheads involved in transitioning from one
+    observation position to another.
+    """
+
+    def __init__(self, slew_rate_az, slew_rate_alt):
+        """
+        Initialize a new instance of the Overheads class. The slew rates are given in degrees per
+        second.
+
+        Parameters
+        ----------
+        slew_rate_az : float
+            The azimuth slew rate in degrees per second.
+        slew_rate_alt : float
+            The altitude slew rate in degrees per second.
+        """
+        self.slew_rate_az = slew_rate_az
+        self.slew_rate_alt = slew_rate_alt
+        self.overheads = []
+        self.overhead_times = {}
+
+    def validate_function_params(self, func):
+        params = inspect.signature(func).parameters
+        param_names = list(params.keys())
+        expected_names = ["observation1", "observation2"]
+
+        # Check if the function has exactly two parameters named 'observation1' and 'observation2'
+        if param_names == expected_names:
+            return True
+        else:
+            return False
+
+    def add_overhead(self, overhead_func, can_overlap_with_slew: bool = False):
+        """
+        Add an overhead function to the list of overheads.
+
+        Parameters
+        ----------
+        overhead_func : Callable
+            The overhead function to be added.
+        """
+        # Check that the given object is a function
+        if not inspect.isfunction(overhead_func):
+            raise TypeError("overhead_func must be a function")
+        # Check that the function has the correct parameters
+        if not self.validate_function_params(overhead_func):
+            raise ValueError(
+                "Function must have exactly two parameters named 'observation1' and 'observation2'"
+            )
+
+        # Add the function to the list of overheads
+        self.overheads.append((overhead_func, can_overlap_with_slew))
+
+    def calculate_slew_time(self, obs1: Observation, obs2: Observation):
+        """
+        Calculate the slew time between two observations.
+
+        Parameters
+        ----------
+        obs1 : Observation
+            The first observation.
+        obs2 : Observation
+            The second observation.
+
+        Returns
+        -------
+        slew_time : float
+            The slew time in seconds.
+        """
+        # Calculate the difference in altitude and azimuth between the two observations
+        time_idx = np.searchsorted(
+            obs1.night.night_time_range.jd, obs1.end_time, side="right"
+        )
+        obs1_alt = obs1.night_altitudes[time_idx]
+        obs1_az = obs1.night_azimuths[time_idx]
+        obs2_alt = obs2.night_altitudes[time_idx]
+        obs2_az = obs2.night_azimuths[time_idx]
+
+        abs_sep_alt = np.abs(obs1_alt - obs2_alt)
+        abs_sep_az = np.abs(obs1_az - obs2_az)
+        # Take shortest path if azimuth separation is larger than 180 degrees
+        if abs_sep_az > 180:
+            abs_sep_az = 360 - abs_sep_az
+
+        slew_time_az = abs_sep_az / self.slew_rate_az
+        slew_time_alt = abs_sep_alt / self.slew_rate_alt
+        # As Az and Alt rotation happens simultaneously, total slew time will be
+        # the largest of the two
+        # TODO consider if alt slew time is necesarry as most of the time it will be dominated by
+        # azimuth slew time (commonly larger separation than altitude)
+        slew_time = np.max([slew_time_az, slew_time_alt])
+        slew_time /= 86400  # Convert to days
+        return slew_time
+
+    def calculate_transition(self, observation1, observation2):
+        """
+        Calculate the total overhead time between two observations.
+
+        Parameters
+        ----------
+        observation1 : Observation
+            The first observation.
+        observation2 : Observation
+            The second observation.
+        """
+        # Calculate slew time based on RA and DEC differences and slew rates
+        slew_time = self.calculate_slew_time(observation1, observation2)
+        self.overhead_times["slew_time"] = slew_time
+
+        # Calculate other overheads
+        for overhead_func, can_overlap_with_slew in self.overheads:
+            overhead_time = overhead_func(observation1, observation2)
+            overhead_time /= 86400  # Convert to days
+            self.overhead_times[overhead_func.__name__] = overhead_time
+            if can_overlap_with_slew:
+                total_overhead = np.max([slew_time, overhead_time])
+            else:
+                total_overhead = slew_time + overhead_time
+
+        return total_overhead
+
+
 class Plan:
     """
     A container class for Observation objects representing a plan for scheduling observations.
@@ -739,7 +845,7 @@ class Plan:
         else:
             first_obs = self.observations[0]
             observation_time = 0.0  # first_obs.exposure_time
-            for i, obs in enumerate(self.observations):
+            for obs in self.observations:
                 observation_time += obs.exposure_time
             # Check that overhead and observation time add up to the total time
             overhead_time = (
@@ -749,12 +855,13 @@ class Plan:
                 first_obs.night.obs_within_limits[1]
                 - first_obs.night.obs_within_limits[0]
             )
+            total_time = self.observations[-1].end_time - first_obs.start_time
             unused_time = available_obs_time - observation_time - overhead_time
             self.observation_time = TimeDelta(observation_time * u.day).to_datetime()
             self.overhead_time = TimeDelta(overhead_time * u.day).to_datetime()
             self.unused_time = TimeDelta(unused_time * u.day).to_datetime()
-            self.overhead_ratio = overhead_time / observation_time
-            self.observation_ratio = observation_time / available_obs_time
+            self.overhead_ratio = overhead_time / total_time
+            self.observation_ratio = observation_time / total_time
 
     def evaluate_plan(self) -> float:
         """
@@ -782,10 +889,10 @@ class Plan:
         print(f"Length = {len(self)}")
         print(f"Score = {self.score:.6f}")
         print(f"Evaluation = {self.evaluation:.6f}")
-        print(f"Overhead time = {self.overhead_time}")
-        print(f"Overhead ratio = {self.overhead_ratio:.5f}")
         print(f"Observation time = {self.observation_time}")
+        print(f"Overhead time = {self.overhead_time}")
         print(f"Observation ratio = {self.observation_ratio:.5f}")
+        print(f"Overhead ratio = {self.overhead_ratio:.5f}")
 
     def plot(self, display: bool = True, save: bool = False, path: str = None):
         """
