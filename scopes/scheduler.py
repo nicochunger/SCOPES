@@ -45,7 +45,6 @@ class Scheduler:
             self.plan_start_time = night.obs_within_limits[0]
         else:
             self.plan_start_time = plan_start_time
-        self.night = night
         # Check that the selected plan start time is within the night
         if self.plan_start_time < night.obs_within_limits[0]:
             raise ValueError(
@@ -55,6 +54,8 @@ class Scheduler:
             raise ValueError(
                 f"plan_start_time is after the end of the observable night ({night.obs_within_limits[1]})."
             )
+
+        self.night = night
         self.obs_list = obs_list
         self.overheads = overheads
         # Set the start of all obs
@@ -65,6 +66,9 @@ class Scheduler:
             # Run skypath to calculate the path of the object during the night
             obs.skypath()
             obs.update_alt_airmass()
+
+        # Calculate the extended time range for the culmination merit
+        self.night.calculate_culmination_window(self.obs_list)
 
     def check_max_plan_length(self, max_plan_length):
         """

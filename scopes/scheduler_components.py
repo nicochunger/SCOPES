@@ -80,6 +80,10 @@ class Night:
         self.time_range_astronomical = np.linspace(
             self.astronomical_evening, self.astronomical_morning, 300
         )
+        # Extended time range for the night, 5 hours before and after sunset / sunrise
+        self.time_range_extended = np.linspace(
+            self.sunset - 5 / 24, self.sunrise + 5 / 24, 300
+        )
         # Now only use the jd value of the twilights
         self.civil_evening = self.civil_evening.jd
         self.nautical_evening = self.nautical_evening.jd
@@ -108,8 +112,37 @@ class Night:
         # FOR NOW: I will calculate this very simply by saying that allowed targets are those that
         # culminate within the night time range +- 3 hours
         # TODO Change this to be more robust calcualted from the actual set of targets.
-        offsets = np.array([-3, 3]) / 24  # in days
-        self.culmination_window = self.obs_within_limits + offsets
+        # offsets = np.array([-3, 3]) / 24  # in days
+        # self.culmination_window = self.obs_within_limits + offsets
+
+    def calculate_culmination_window(self, obs_list):
+        """
+        Calculate the culmination window for the night based on the given list of observations.
+
+        Parameters
+        ----------
+        obs_list : List[Observation]
+            A list of Observation objects.
+        """
+
+        # Check if the objects in obs_list have the attribute culmination_time
+        if not all(hasattr(obs, "culmination_time") for obs in obs_list):
+            raise AttributeError(
+                "sky_path() has to be run for all observations before calling this method."
+            )
+
+        # Get the culmination times of all observations
+        culm_times = np.array([obs.culmination_time for obs in obs_list])
+        # Check the observation is observable during the night
+        is_observable = np.array(
+            [np.any(obs.night_airmasses > 1.8) for obs in obs_list]
+        )
+
+        # Calculate the start and end times of the culmination window
+        culm_window_start = np.min(culm_times[is_observable])
+        culm_window_end = np.max(culm_times[is_observable])
+        self.culmination_window = (culm_window_start, culm_window_end)
+        # return culmination_window
 
     def __str__(self):
         lines = [
@@ -302,7 +335,6 @@ class Target:
         name: str,
         program: Program,
         coords: SkyCoord,
-        # exposure_time: float,
         priority: int = None,
         comment: str = "",
     ):
@@ -330,7 +362,6 @@ class Target:
         self.coords = coords
         self.ra_deg = coords.ra.deg
         self.dec_deg = coords.dec.deg
-        # self.exposure_time = exposure_time
         # Check that priority value is valid
         if (priority % 1) != 0:
             raise TypeError("Priority must be an integer")
@@ -398,9 +429,7 @@ class Observation:
     def __init__(
         self,
         target: Target,
-        # start_time: float,
         exposure_time: float,
-        # night: Night,
     ):
         """
         Initialize a new instance of the Observation class.
@@ -417,10 +446,7 @@ class Observation:
             The Night object representing the night during which the observation takes place.
         """
         self.target = target
-        # self.start_time = start_time
         self.exposure_time = exposure_time
-        # self.end_time = self.start_time + self.exposure_time
-        # self.night = night
         # Telescope altitude limits. These are only used to calculate the minimum and maximum
         # altitudes of the target during the night. The actual observational limits are set by the
         # Altitude merit defined by the user.
@@ -474,19 +500,13 @@ class Observation:
         # Get the maximum altitude of the target during the night
         self.max_altitude = min(self.night_altitudes.max(), self.tel_alt_upper_lim)
 
-        # Get time of maximum altitude
-        # Create a time range for the culmination window (defined in the Night instance)
-        culmination_window_timerange = np.linspace(
-            Time(self.night.culmination_window[0], format="jd"),
-            Time(self.night.culmination_window[1], format="jd"),
-            300,
-        )
-        # Convert to AltAz frame and get the time of maximum altitude
-        self.culmination_time = self.target.coords.transform_to(
-            self.night.observer.altaz(time=culmination_window_timerange)
-        )
-        self.culmination_time = culmination_window_timerange[
-            np.argmax(self.culmination_time.alt.deg)
+        # Convert extended time range to AltAz frame and get the time of maximum altitude
+        self.culmination_time = self.night.time_range_extended[
+            np.argmax(
+                self.target.coords.transform_to(
+                    self.night.observer.altaz(time=self.night.time_range_extended)
+                ).alt.deg
+            )
         ].jd
 
         # Get the rise and set times of the target
