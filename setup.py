@@ -14,7 +14,15 @@ setup(
     long_description_content_type="text/markdown",
     packages=find_packages(),
     package_dir={"scopes": "scopes"},
-    install_requires=["numpy", "pandas", "astropy", "astroplan", "tqdm"],
+    install_requires=[
+        "numpy",
+        "pandas",
+        "astropy",
+        "astroplan",
+        "tqdm",
+        "pytz",
+        "timezonefinder",
+    ],
     extras_require={"dev": ["pytest", "sphinx"]},
     classifiers=[
         "Development Status :: 3 - Alpha",

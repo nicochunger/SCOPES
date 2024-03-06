@@ -2,7 +2,7 @@ import inspect
 import itertools
 import re
 import uuid
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, time, timedelta
 from typing import Any, Callable, Dict, List, Union
 
 import astropy.units as u
@@ -11,10 +11,12 @@ import matplotlib.dates as mdates
 import matplotlib.pyplot as plt
 import numpy as np
 import plotly.graph_objs as go
+import pytz
 from astroplan import Observer
 from astropy.coordinates import SkyCoord
 from astropy.time import Time, TimeDelta
 from plotly.subplots import make_subplots
+from timezonefinder import TimezoneFinder
 
 
 class Night:
@@ -40,35 +42,31 @@ class Night:
             raise ValueError(f"observations_within must be one of {valid_options}")
         self.observer = observer
 
-        # Define a middle of the night time to 4UT of the following day, which will always fall
-        # within the night time range
-        self.night_middle = Time(
-            datetime.combine(self.night_date, datetime.min.time())
-            + timedelta(days=1, hours=4)
-        )
+        # Calculate the solar midnight for the night based on the observer's location
+        self.solar_midnight = self.calculate_solar_midnight()
         # Get the sunset and sunrise times for the night
-        self.sunset = self.observer.sun_set_time(self.night_middle, which="previous")
-        self.sunrise = self.observer.sun_rise_time(self.night_middle, which="next")
+        self.sunset = self.observer.sun_set_time(self.solar_midnight, which="previous")
+        self.sunrise = self.observer.sun_rise_time(self.solar_midnight, which="next")
 
         # Get the times for the different twilights
         self.civil_evening = self.observer.twilight_evening_civil(
-            self.night_middle, which="previous"
+            self.solar_midnight, which="previous"
         )
         self.nautical_evening = self.observer.twilight_evening_nautical(
-            self.night_middle, which="previous"
+            self.solar_midnight, which="previous"
         )
         self.astronomical_evening = self.observer.twilight_evening_astronomical(
-            self.night_middle, which="previous"
+            self.solar_midnight, which="previous"
         )
         # And the same for the morning
         self.civil_morning = self.observer.twilight_morning_civil(
-            self.night_middle, which="next"
+            self.solar_midnight, which="next"
         )
         self.nautical_morning = self.observer.twilight_morning_nautical(
-            self.night_middle, which="next"
+            self.solar_midnight, which="next"
         )
         self.astronomical_morning = self.observer.twilight_morning_astronomical(
-            self.night_middle, which="next"
+            self.solar_midnight, which="next"
         )
 
         # Time ranges for the different twilights
@@ -82,7 +80,9 @@ class Night:
         )
         # Extended time range for the night, 5 hours before and after sunset / sunrise
         self.time_range_extended = np.linspace(
-            self.sunset - 5 / 24, self.sunrise + 5 / 24, 300
+            self.sunset - TimeDelta(5 / 24, format="jd"),
+            self.sunrise + TimeDelta(5 / 24, format="jd"),
+            300,
         )
         # Now only use the jd value of the twilights
         self.civil_evening = self.civil_evening.jd
@@ -108,12 +108,36 @@ class Night:
             )
             self.night_time_range = self.time_range_astronomical
 
-        # Calculate allowed culmination times for the night
-        # FOR NOW: I will calculate this very simply by saying that allowed targets are those that
-        # culminate within the night time range +- 3 hours
-        # TODO Change this to be more robust calcualted from the actual set of targets.
-        # offsets = np.array([-3, 3]) / 24  # in days
-        # self.culmination_window = self.obs_within_limits + offsets
+    def calculate_solar_midnight(self):
+        """
+        Calculate the solar midnight for the night.
+
+        Returns
+        -------
+        solar_midnight : astropy.time.Time
+            The calculated solar midnight in UTC.
+        """
+        # Use timezonefinder to get the timezone
+        timezone_str = TimezoneFinder().timezone_at(
+            lat=self.observer.latitude.value, lng=self.observer.longitude.value
+        )
+
+        # Define the observer's local timezone
+        local_timezone = pytz.timezone(timezone_str)
+
+        # Create a localized datetime object
+        local_datetime = datetime.combine(self.night_date, time(hour=18))
+        local_datetime = local_timezone.localize(local_datetime)
+
+        # Convert local datetime to UTC
+        utc_datetime = local_datetime.astimezone(pytz.utc)
+
+        # Convert the UTC datetime to an astropy Time object
+        time_utc = Time(utc_datetime)
+
+        # Calculate solar midnight in UTC based on the converted UTC time
+        solar_midnight = self.observer.midnight(time_utc, which="next")
+        return solar_midnight
 
     def calculate_culmination_window(self, obs_list):
         """
@@ -135,7 +159,7 @@ class Night:
         culm_times = np.array([obs.culmination_time for obs in obs_list])
         # Check the observation is observable during the night
         is_observable = np.array(
-            [np.any(obs.night_airmasses > 1.8) for obs in obs_list]
+            [np.any(obs.night_airmasses < 1.8) for obs in obs_list]
         )
 
         # Calculate the start and end times of the culmination window
