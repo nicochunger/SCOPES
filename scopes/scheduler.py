@@ -372,6 +372,11 @@ class DPPlanner(Scheduler):
         self.total_counter = 0
         self.saved_state_counter = 0
 
+    def reset_dp(self):
+        self.DP = {}
+        self.total_counter = 0
+        self.saved_state_counter = 0
+
     def dp_recursion(
         self,
         remaining_observations: List[Observation],
