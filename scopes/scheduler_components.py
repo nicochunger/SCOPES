@@ -883,7 +883,7 @@ class Plan:
             self.overhead_ratio = overhead_time / total_time
             self.observation_ratio = observation_time / total_time
 
-    def evaluate_plan(self) -> float:
+    def evaluate_plan(self, w_score: float = 0.2, w_overhead: float = 0.8) -> float:
         """
         Calculates the evaluation of the plan. This is the mean of the individual scores of all
         observations times the observation ratio of the plan. This is to compensate between maximum
@@ -894,12 +894,15 @@ class Plan:
         float
             The evaluation of the plan.
         """
+        if w_score + w_overhead != 1:
+            raise ValueError("The weights must sum to 1")
         # Evaluate the whole observation plan
         self.score = float(
             np.mean([obs.score for obs in self.observations]) if len(self) > 0 else 0
         )  # type: ignore
         self.calculate_overhead()
-        self.evaluation = self.score * self.observation_ratio
+        # self.evaluation = self.score * self.observation_ratio
+        self.evaluation = w_score * self.score + w_overhead * self.observation_ratio
         return self.evaluation
 
     def print_stats(self):
