@@ -54,6 +54,15 @@ class Scheduler:
             raise ValueError(
                 f"plan_start_time is after the end of the observable night ({night.obs_within_limits[1]})."
             )
+        # Check that obs_list is a list of Observation objects
+        if not isinstance(obs_list, list):
+            raise TypeError("obs_list has to be a list of Observation objects.")
+        # Check that obs_list is not empty and contains more than one observation
+        if len(obs_list) <= 1:
+            raise ValueError("obs_list has to contain more than one observation.")
+        # Check that obs_list contains only Observation objects
+        if not all(isinstance(obs, Observation) for obs in obs_list):
+            raise TypeError("obs_list has to contain only Observation objects.")
 
         self.night = night
         self.obs_list = obs_list
