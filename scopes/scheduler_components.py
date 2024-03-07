@@ -2,6 +2,7 @@ import inspect
 import itertools
 import re
 import uuid
+import warnings
 from datetime import date, datetime, time, timedelta
 from typing import Any, Callable, Dict, List, Union
 
@@ -236,20 +237,20 @@ class Program:
         if not (0 <= time_share_allocated <= 1):
             raise ValueError("Time share must be between 0 and 1")
         self.time_share_allocated = time_share_allocated
-        self.time_share_current = 0.0
-        self.time_share_pct_diff = 0.0
+        # Initialize the current time usage to the allocated time share
+        self.set_current_time_usage(self.time_share_allocated)
 
-    def update_time_share(self, current_timeshare: float):
+    def set_current_time_usage(self, current_time_usage: float):
         """
         Update the time share for the program.
 
         Parameters
         ----------
-        current_timeshare : float
+        current_time_usage : float
             The current time share used by the program in percent of the total
         """
         # Function that retrieves the current time used by the program
-        self.time_share_current = current_timeshare
+        self.time_share_current = current_time_usage
         self.time_share_pct_diff = self.time_share_current - self.time_share_allocated
 
     def __str__(self) -> str:
@@ -373,8 +374,6 @@ class Target:
             The Program object that the target belongs to.
         coords : SkyCoord
             The coordinates of the target.
-        exposure_time : float
-            The exposure time of the observation in days.
         priority : int
             The priority of the target. Must be between 0 and 3, where 0 is the highest priority
             and 3 is the lowest.
@@ -462,15 +461,22 @@ class Observation:
         ----------
         target : Target
             The Target object representing the target being observed.
-        start_time : float
-            The start time of the observation in JD (Julian Date).
         exposure_time : float
-            The duration of the observation in days.
-        night : Night
-            The Night object representing the night during which the observation takes place.
+            The duration of the observation in seconds.
         """
+        if not isinstance(target, Target):
+            raise TypeError("target must be of type Target")
         self.target = target
-        self.exposure_time = exposure_time
+        # Check if exposure time makes sense
+        if exposure_time <= 0:
+            raise ValueError("exposure_time must be greater than 0")
+        # Check if exposure time is less than 1 second
+        if exposure_time < 1:
+            warnings.warn("exposure_time is less than 1 second")
+        # Check if exposure time is greater than 9 hours
+        if exposure_time > 32400:
+            warnings.warn("exposure_time is greater than 9 hours")
+        self.exposure_time = exposure_time / 86400  # Convert to days for internal use
         # Telescope altitude limits. These are only used to calculate the minimum and maximum
         # altitudes of the target during the night. The actual observational limits are set by the
         # Altitude merit defined by the user.
@@ -907,11 +913,18 @@ class Plan:
             self.overhead_ratio = overhead_time / total_time
             self.observation_ratio = observation_time / total_time
 
-    def evaluate_plan(self, w_score: float = 0.2, w_overhead: float = 0.8) -> float:
+    def evaluate_plan(self, w_score: float = 0.5, w_overhead: float = 0.5) -> float:
         """
         Calculates the evaluation of the plan. This is the mean of the individual scores of all
         observations times the observation ratio of the plan. This is to compensate between maximum
         score of the observations but total observation time.
+
+        Parameters
+        ----------
+        w_score : float, optional
+            The weight of the score in the evaluation. Defaults to 0.4.
+        w_overhead : float, optional
+            The weight of the overhead in the evaluation. Defaults to 0.6.
 
         Returns
         -------
@@ -925,8 +938,8 @@ class Plan:
             np.mean([obs.score for obs in self.observations]) if len(self) > 0 else 0
         )  # type: ignore
         self.calculate_overhead()
-        # self.evaluation = self.score * self.observation_ratio
-        self.evaluation = w_score * self.score + w_overhead * self.observation_ratio
+        self.evaluation = self.score * self.observation_ratio
+        # self.evaluation = w_score * self.score + w_overhead * self.observation_ratio
         return self.evaluation
 
     def print_stats(self):
@@ -1369,14 +1382,14 @@ class Plan:
         lines.append("--------------------------------------------------\n")
         # lines.append(" #      Program ID      Target                  Start time   (Exp time)")
         lines.append(
-            f"{'#':<6}{'Program ID':<12}{'Target':<20}{'Start time':<13}{'(Exp time)':<12}{'Comment for the observer':<40}"
+            f"{'#':<6}{'Program ID':<15}{'Target':<20}{'Start time':<13}{'(Exp time)':<12}{'Comment for the observer':<40}"
         )
         for i, obs in enumerate(self.observations):
             start_time = Time(obs.start_time, format="jd").datetime
             exp_time = TimeDelta(obs.exposure_time * u.day).to_datetime()
             string = f"{f'{i+1:>2}:':<6}"
             string += (
-                f"{f'{obs.target.program.progID} {obs.target.program.instrument}':<12}"
+                f"{f'{obs.target.program.progID} {obs.target.program.instrument}':<15}"
             )
             string += f"{obs.target.name:<20}"
             string += f"{start_time.strftime('%H:%M:%S'):<13}"
