@@ -36,8 +36,8 @@ class Scheduler:
             The list of observations to schedule.
         overheads : Overheads
             The overheads object that defines the transition times between observations.
-        plan_start_time : float
-            The start time of the plan. If None, it is set to the start of the observable night.
+        plan_start_time : float, optional
+            The start time of the plan in Julian Date. If None, it is set to the start of the observable night.
         """
         print("Preparing observations for scheduling...")
         if plan_start_time is None:
@@ -63,6 +63,10 @@ class Scheduler:
         # Check that obs_list contains only Observation objects
         if not all(isinstance(obs, Observation) for obs in obs_list):
             raise TypeError("obs_list has to contain only Observation objects.")
+        if not isinstance(night, Night):
+            raise TypeError("night has to be a Night object.")
+        if not isinstance(overheads, Overheads):
+            raise TypeError("overheads has to be an Overheads object.")
 
         self.night = night
         self.obs_list = obs_list
