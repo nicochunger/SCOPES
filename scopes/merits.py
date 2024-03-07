@@ -1,4 +1,4 @@
-""" Definition of all the generic merit functions """
+"""Definition of all the generic merit functions"""
 
 import numpy as np
 from astropy.time import Time
@@ -236,15 +236,23 @@ def culmination_mapping(observation: Observation, verbose: bool = False) -> floa
     verbose : bool, optional
         If True, print the calculated merit. Defaults to False.
     """
+    n = observation.night  # Simplify the notation for shorter and cleaner code
+    # Check if the culmination window is within the night time limits
+    # and adjust the lower and upper limits of the window if necessary
+    # This is to make sure that if the culmination window is within the full night time limits
+    # then the mapped window will be the same as the original window. Otherwise it would map
+    # from a smaller window to a larger window, which would be wrong.
+    mapped_window = [n.obs_within_limits[0], n.obs_within_limits[1]]
+    if n.culmination_window[0] > n.obs_within_limits[0]:
+        mapped_window[0] = n.culmination_window[0]
+    if n.culmination_window[1] < n.obs_within_limits[1]:
+        mapped_window[1] = n.culmination_window[1]
 
-    time_prop = (
-        observation.culmination_time - observation.night.culmination_window[0]
-    ) / (
-        observation.night.culmination_window[1]
-        - observation.night.culmination_window[0]
+    time_prop = (observation.culmination_time - n.culmination_window[0]) / (
+        n.culmination_window[1] - n.culmination_window[0]
     )
-    peak_merit_time = observation.night.obs_within_limits[0] + time_prop * (
-        observation.night.obs_within_limits[1] - observation.night.obs_within_limits[0]
+    peak_merit_time = n.obs_within_limits[0] + time_prop * (
+        n.obs_within_limits[1] - n.obs_within_limits[0]
     )
 
     # Calculate the merit of the target at the mapping time
