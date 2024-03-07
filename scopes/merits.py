@@ -34,7 +34,8 @@ def time_share(
 
     Returns
     -------
-    float : The time share merit of the observation
+    merit : float
+        The time share merit of the observation
     """
     # Check that the parameters are valid
     if alpha <= 0:
@@ -53,14 +54,13 @@ def time_share(
     # If the exponent term is too big, cap it at 5 or -5
     # This is to limit the size of the exponent term and control the np.exp() function.
     # After 5 the merit already reaches its limits
-    abs_exp_term = abs(exp_term)
-    if abs_exp_term > 5:
+    if abs_exp_term := abs(exp_term) > 5:
         sign = exp_term / abs_exp_term
         exp_term = sign * 5
 
-    # merit
-    m = (delta / (1 + np.exp(exp_term))) + (1 - delta / 2)
-    return m
+    # Calculate merit
+    merit = (delta / (1 + np.exp(exp_term))) + (1 - delta / 2)
+    return merit
 
 
 def priority(
