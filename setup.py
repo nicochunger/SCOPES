@@ -6,7 +6,7 @@ with open("README.md", encoding="utf-8") as f:
 
 setup(
     name="scopes",
-    version="0.1.0",
+    version="0.2.0",
     author="Nicolas Unger",
     author_email="nicolas.unger@unige.ch",
     description="System for Coordinating Observational Planning and Efficient Scheduling",
