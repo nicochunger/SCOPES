@@ -5,7 +5,8 @@ from typing import Any, List, Tuple, Union
 
 from tqdm.auto import tqdm
 
-from .scheduler_components import Night, Observation, Overheads, Plan
+from .merits import end_time
+from .scheduler_components import Merit, Night, Observation, Overheads, Plan
 
 
 ## ----- BASE SCHEDULER CLASS ----- ##
@@ -23,6 +24,7 @@ class Scheduler:
         obs_list: List[Observation],
         overheads: Overheads,
         plan_start_time: float = None,
+        plan_end_time: float = None,
     ) -> None:
         """
         Initializes the Scheduler class. Checks the validity of the plan start time and sets the
@@ -37,23 +39,45 @@ class Scheduler:
         overheads : Overheads
             The overheads object that defines the transition times between observations.
         plan_start_time : float, optional
-            The start time of the plan in Julian Date. If None, it is set to the start of the observable night.
+            The start time of the plan in Julian Date. If None, it is set to the start of the
+            observable night (as defined in the night object).
+        plan_end_time : float, optional
+            The end time of the plan in Julian Date. If None, it is set to the end of the
+            observable night (as defined in the night object).
         """
         print("Preparing observations for scheduling...")
-        if plan_start_time is None:
-            # If plan_start_time is None, set it to the start of the observable night
-            self.plan_start_time = night.obs_within_limits[0]
-        else:
-            self.plan_start_time = plan_start_time
-        # Check that the selected plan start time is within the night
-        if self.plan_start_time < night.obs_within_limits[0]:
+        # Set plan_start_time to the start of the observable night if it's None, otherwise use the given value
+        self.plan_start_time = (
+            night.obs_within_limits[0] if plan_start_time is None else plan_start_time
+        )
+
+        # Check that the selected plan start time is within the observable night limits
+        if not (
+            night.obs_within_limits[0]
+            <= self.plan_start_time
+            < night.obs_within_limits[1]
+        ):
             raise ValueError(
-                f"plan_start_time is before the start of the observable night ({night.obs_within_limits[0]})."
+                f"plan_start_time ({self.plan_start_time}) is outside the observable night limits "
+                f"({night.obs_within_limits[0]} to {night.obs_within_limits[1]})."
             )
-        if self.plan_start_time >= night.obs_within_limits[1]:
+        # Set plan_end_time to the end of the observable night if it's None, otherwise use the given value
+        custom_end_time = plan_end_time is not None
+        self.plan_end_time = (
+            night.obs_within_limits[1] if plan_end_time is None else plan_end_time
+        )
+
+        # Check that the selected plan end time is within the observable night limits
+        if not (
+            night.obs_within_limits[0]
+            <= self.plan_end_time
+            <= night.obs_within_limits[1]
+        ):
             raise ValueError(
-                f"plan_start_time is after the end of the observable night ({night.obs_within_limits[1]})."
+                f"plan_end_time ({self.plan_end_time}) is outside the observable night limits "
+                f"({night.obs_within_limits[0]} to {night.obs_within_limits[1]})."
             )
+
         # Check that obs_list is a list of Observation objects
         if not isinstance(obs_list, list):
             raise TypeError("obs_list has to be a list of Observation objects.")
@@ -73,6 +97,10 @@ class Scheduler:
         self.overheads = overheads
         # Set the start of all obs
         for obs in tqdm(self.obs_list):
+            if custom_end_time:
+                obs.target.add_merit(
+                    Merit("EndTime", end_time, "veto", {"time": self.plan_end_time})
+                )
             # Set the night and start time
             obs.set_night(self.night)
             obs.set_start_time(self.plan_start_time)
@@ -119,6 +147,7 @@ class Scheduler:
         and assigning the attributes of the original observations to the new ones.
 
         This is a workaround for the fact that deepcopy is very slow for these types of objects.
+        This alone can speed up the scheduling algorithms by a factor of 10.
 
         Parameters
         ----------

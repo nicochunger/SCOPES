@@ -182,6 +182,21 @@ def altitude(
         )
 
 
+def end_time(observation: Observation, time: float) -> float:
+    """
+    Veto merit function that returns 0 if the observation ends after the given time, and 1
+    otherwise. This is used when an end time is given for the schedule.
+
+    Parameters
+    ----------
+    observation : Observation
+        The Observation object to be used
+    time : float
+        The end time of the observation
+    """
+    return float(observation.end_time <= time)
+
+
 def culmination(observation: Observation, verbose: bool = False) -> float:
     """
     Culmination constraint merit function.
