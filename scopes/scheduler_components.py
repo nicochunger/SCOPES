@@ -907,9 +907,10 @@ class Plan:
             )
             total_time = self.observations[-1].end_time - first_obs.start_time
             unused_time = available_obs_time - observation_time - overhead_time
-            self.observation_time = TimeDelta(observation_time * u.day).to_datetime()
-            self.overhead_time = TimeDelta(overhead_time * u.day).to_datetime()
-            self.unused_time = TimeDelta(unused_time * u.day).to_datetime()
+
+            self.observation_time = timedelta(days=observation_time)
+            self.overhead_time = timedelta(days=overhead_time)
+            self.unused_time = timedelta(days=unused_time)
             self.overhead_ratio = overhead_time / total_time
             self.observation_ratio = observation_time / total_time
 
@@ -1249,7 +1250,7 @@ class Plan:
                 f"<b>{obs.target.name}</b><br>"
                 + f"{obs.target.program.instrument} {program_id}<br><br>"
                 + f"Start time: {Time(obs.start_time, format='jd').datetime.strftime('%H:%M:%S %d-%m-%Y')}<br>"
-                + f"Exp time: {TimeDelta(obs.exposure_time * u.day).to_datetime()}<br>"
+                + f"Exp time: {timedelta(obs.exposure_time)}<br>"
                 + f"Comment: {obs.target.comment}"
                 + "<extra></extra>"
             )
@@ -1359,8 +1360,9 @@ class Plan:
 
     def print_plan(self, save: bool = False, path: str = None):
         """
-        Print the plan itself with each observation. This includes the target, the program,
-        the start time of the observation and its exposure time.
+        Print the plan itself with each observation. This includes the target, the program, the
+        instrument, the coordinates, the start time of the observation, its exposure time, and
+        the comment for the observer (if any).
 
         Parameters
         ----------
@@ -1372,7 +1374,7 @@ class Plan:
 
         Returns
         -------
-        str
+        plan_txt : str
             The night's plan as a human readable text when printed.
         """
         lines = []
@@ -1380,22 +1382,89 @@ class Plan:
             f"Plan for the night of {self.observations[0].night.night_date} (Times in UTC)"
         )
         lines.append("--------------------------------------------------\n")
-        # lines.append(" #      Program ID      Target                  Start time   (Exp time)")
+        # Initialize variables for maximum column widths
+        max_prog_id_width = len("ProgID")
+        max_instrument_width = len("Instrument")
+        max_target_width = len("Target")
+        max_ra_width = len("RA")
+        max_dec_width = len("DEC")
+        max_start_time_width = len("Start Time")
+        max_exp_time_width = len("(Exp time)")
+        max_comment_width = len("Comment for the observer")
+
+        # Determine the maximum width of each column
+        for obs in self.observations:
+            start_time = Time(obs.start_time, format="jd").datetime
+            exp_time = timedelta(days=obs.exposure_time)
+            ra_str = obs.target.coords.ra.to_string(
+                unit="hour", sep=":", precision=0, pad=True
+            )
+            dec_str = obs.target.coords.dec.to_string(
+                unit="deg", sep=":", precision=0, pad=True, alwayssign=True
+            )
+
+            prog_id_width = len(obs.target.program.progID)
+            instrument_width = len(obs.target.program.instrument)
+            target_width = len(obs.target.name)
+            ra_width = len(ra_str)
+            dec_width = len(dec_str)
+            start_time_width = len(start_time.strftime("%H:%M:%S"))
+            exp_time_width = len(f"({exp_time})")
+            comment_width = len(obs.target.comment)
+
+            # Update max widths if current item is larger
+            max_prog_id_width = max(max_prog_id_width, prog_id_width)
+            max_instrument_width = max(max_instrument_width, instrument_width)
+            max_target_width = max(max_target_width, target_width)
+            max_ra_width = max(max_ra_width, ra_width)
+            max_dec_width = max(max_dec_width, dec_width)
+            max_start_time_width = max(max_start_time_width, start_time_width)
+            max_exp_time_width = max(max_exp_time_width, exp_time_width)
+            max_comment_width = max(max_comment_width, comment_width)
+
+        # Prepare header and lines list
+        lines = []
+        header_format = f"{{:<6}}{{:<{max_prog_id_width+2}}}{{:<{max_instrument_width+2}}}{{:<{max_target_width+2}}}{{:<{max_ra_width+2}}}{{:<{max_dec_width+2}}}{{:<{max_start_time_width+2}}}{{:<{max_exp_time_width+2}}}{{:<{max_comment_width+2}}}"
         lines.append(
-            f"{'#':<6}{'Program ID':<15}{'Target':<20}{'Start time':<13}{'(Exp time)':<12}{'Comment for the observer':<40}"
+            header_format.format(
+                "#",
+                "ProgID",
+                "Instrument",
+                "Target",
+                "RA",
+                "DEC",
+                "Start Time",
+                "(Exp Time)",
+                "Comment for the observer",
+            )
         )
+
+        # Format each observation line with dynamic widths
         for i, obs in enumerate(self.observations):
             start_time = Time(obs.start_time, format="jd").datetime
             exp_time = TimeDelta(obs.exposure_time * u.day).to_datetime()
-            string = f"{f'{i+1:>2}:':<6}"
-            string += (
-                f"{f'{obs.target.program.progID} {obs.target.program.instrument}':<15}"
+            ra_str = obs.target.coords.ra.to_string(
+                unit="hour", sep=":", precision=0, pad=True
             )
-            string += f"{obs.target.name:<20}"
-            string += f"{start_time.strftime('%H:%M:%S'):<13}"
-            string += f"{f'({exp_time})':<12}"
-            string += f"{obs.target.comment:<40}"
-            lines.append(string)
+            dec_str = obs.target.coords.dec.to_string(
+                unit="deg", sep=":", precision=0, pad=True, alwayssign=True
+            )
+
+            line_format = f"{{:<6}}{{:<{max_prog_id_width+2}}}{{:<{max_instrument_width+2}}}{{:<{max_target_width+2}}}{{:<{max_ra_width+2}}}{{:<{max_dec_width+2}}}{{:<{max_start_time_width+2}}}{{:<{max_exp_time_width+2}}}{{:<{max_comment_width+2}}}"
+            line = line_format.format(
+                f"{i+1:>2}:",
+                obs.target.program.progID,
+                obs.target.program.instrument,
+                obs.target.name,
+                ra_str,
+                dec_str,
+                start_time.strftime("%H:%M:%S"),
+                f"({exp_time})",
+                obs.target.comment,
+            )
+            lines.append(line)
+
+        # Join the lines into a single string
         plan_txt = "\n".join(lines)
         if save:
             if path is None:
