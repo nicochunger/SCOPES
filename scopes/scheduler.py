@@ -22,7 +22,7 @@ class Scheduler:
         night: Night,
         obs_list: List[Observation],
         overheads: Overheads,
-        plan_start_time: float,
+        plan_start_time: float = None,
     ) -> None:
         """
         Initializes the Scheduler class. Checks the validity of the plan start time and sets the
@@ -194,15 +194,9 @@ class Scheduler:
 
 ## ----- SPECIFIC SCHEDULERS ----- ##
 class generateQ(Scheduler):
-    def __init__(
-        self,
-        night: Night,
-        obs_list: List[Observation],
-        overheads: Overheads,
-        plan_start_time: float = None,
-    ):
-        # Call the parent class constructor
-        super().__init__(night, obs_list, overheads, plan_start_time)
+    def __init__(self, *args, **kwargs) -> None:
+        # Call the parent class init
+        super().__init__(*args, **kwargs)
 
     # Basic forward scheduler, greedy search
     def forwardP(
@@ -373,14 +367,9 @@ class generateQ(Scheduler):
 
 # Dynamic programming scheduler using recursion
 class DPPlanner(Scheduler):
-    def __init__(
-        self,
-        night: Night,
-        obs_list: List[Observation],
-        overheads: Overheads,
-        plan_start_time=None,
-    ) -> None:
-        super().__init__(night, obs_list, overheads, plan_start_time)
+    def __init__(self, *args, **kwargs) -> None:
+        # Call the parent class init
+        super().__init__(*args, **kwargs)
         self.DP = {}
         self.total_counter = 0
         self.saved_state_counter = 0
@@ -495,14 +484,9 @@ class DPPlanner(Scheduler):
 
 # Beam search scheduler
 class BeamSearchPlanner(Scheduler):
-    def __init__(
-        self,
-        night: Night,
-        obs_list: List[Observation],
-        overheads: Overheads,
-        plan_start_time=None,
-    ) -> None:
-        super().__init__(night, obs_list, overheads, plan_start_time)
+    def __init__(self, *args, **kwargs) -> None:
+        # Call the parent class init
+        super().__init__(*args, **kwargs)
         self.total_counter = 0
         self.depth = 0
 
