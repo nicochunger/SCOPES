@@ -1,0 +1,14 @@
+0.x.x - TBA
+
+- 
+
+0.2.0 - 07.03.2024
+
+- Added a bunch of features, like the big overhaul of the Observation object and moving many of
+  the tasks to the Scheduler.
+- Added option to set an end time for a schedule (to only schedule part of the night)
+- Many other things I don't remember (I just created this file to keep track of the changes)
+
+0.1.0 - January 2024
+
+- Initial release
