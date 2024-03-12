@@ -129,35 +129,33 @@ def at_night(observation: Observation) -> float:
     )
 
 
-def airmass(observation: Observation, max: float, alpha: float = 0.05) -> float:
+def airmass(observation: Observation, limit: float, alpha: float = 0.0001) -> float:
     """
-    Merit function on the airmass of the observation. It uses a hyperbolic tangent function to
-    gradually increase the merit as the airmass increases. The specific shape can be set with the
-    parameters min and alpha. The exact formula is:
+    Merit function on the current airmass of the target. It uses a hyperbolic tangent function to
+    gradually increase the merit as the airmass decreases. The specific shape can be set with the
+    parameters limit and alpha. The exact formula is:
 
-    m = tanh((max - current_airmass) / alpha)
+    m = (tanh((limit - current_airmass) / alpha) + 1) / 2
+
+    By default the alpha parameter is set to 0.0001 which in practice is equivalent to a step
+    function, or a simple boolean with a hard limit.
 
     Parameters
     ----------
     observation : Observation
         The Observation object to be used
-    max : float, optional
-        The maximum airmass allowed for this observation to be considered.
+    limit : float, optional
+        The limit airmass.
     alpha : float, optional
-        A measure of the tolerance around the maximum airmass. Defaults to 0.05.
+        A measure of the tolerance around the maximum airmass. Defaults to 0.0001, equivalent to a
+        step function.
     """
-    # Claculate airmass throughout the exposure of the observation
     if len(observation.obs_airmasses) == 0:
         return 0.0
     else:
-        return observation.obs_airmasses.max() < max
-
-    # Same but with the tangent function
-    # if len(observation.obs_airmasses) == 0:
-    #     return 0.0
-    # else:
-    #     arg = (max - observation.obs_airmasses.max()) / alpha
-    #     return np.tanh(arg)
+        # return observation.obs_airmasses.max() < limit
+        arg = (limit - observation.obs_airmasses.max()) / alpha
+        return (np.tanh(arg) + 1) / 2
 
 
 def altitude(
@@ -180,6 +178,34 @@ def altitude(
         return (observation.obs_altitudes.min() > min) and (
             observation.obs_altitudes.max() < max
         )
+
+
+def moon_separation(observation: Observation, min: float = 30.0) -> float:
+    """
+    Moon separation constraint merit function
+    TODO: this entire merit function has to be tested.
+
+    Parameters
+    ----------
+    observation : Observation
+        The Observation object to be used
+    min : float, optional
+        The minimum separation to the moon in degrees. Defaults to 30.0.
+    """
+    # Create the AltAz frame for the moon
+    # TODO put this in the Night init.
+    # Can be done only once if calculated beforehand for the entire night
+    moon_altaz_frame = observation.night.observer.moon_altaz(
+        time=Time(observation.start_time, format="jd")
+    )
+    # Calculate moon distance throughout the exposure of the observation
+    range_moon_distance = observation.target.coords.separation(moon_altaz_frame).deg
+
+    # TODO: Implement a merit that takes into account the moon illumination and distance
+    if range_moon_distance.min() < min:
+        return 0.0
+    else:
+        return 1.0
 
 
 def end_time(observation: Observation, time: float) -> float:
@@ -373,34 +399,6 @@ def time_critical(
     if verbose:
         print(f"time_critical {merit = }")
     return merit
-
-
-def moon_distance(observation: Observation, min: float = 30.0) -> float:
-    """
-    Moon distance constraint merit function
-    TODO: this entire merit function has to be tested.
-
-    Parameters
-    ----------
-    observation : Observation
-        The Observation object to be used
-    min : float, optional
-        The minimum distance to the moon in degrees. Defaults to 30.0.
-    """
-    # Create the AltAz frame for the moon
-    # TODO put this in the Night init.
-    # Can be done only once if calculated beforehand for the entire night
-    moon_altaz_frame = observation.night.observer.moon_altaz(
-        time=Time(observation.start_time, format="jd")
-    )
-    # Calculate moon distance throughout the exposure of the observation
-    range_moon_distance = observation.target.coords.separation(moon_altaz_frame).deg
-
-    # TODO: Implement a merit that takes into account the moon illumination and distance
-    if range_moon_distance.min() < min:
-        return 0.0
-    else:
-        return 1.0
 
 
 def gaussian(x, sigma):
