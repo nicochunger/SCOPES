@@ -133,7 +133,8 @@ def airmass(observation: Observation, limit: float, alpha: float = 0.0001) -> fl
     """
     Merit function on the current airmass of the target. It uses a hyperbolic tangent function to
     gradually increase the merit as the airmass decreases. The specific shape can be set with the
-    parameters limit and alpha. The exact formula is:
+    parameters limit and alpha. The airmass considered is the maximum that the observation reaches
+    during its exposure time. The exact formula is:
 
     m = (tanh((limit - current_airmass) / alpha) + 1) / 2
 
@@ -154,17 +155,17 @@ def airmass(observation: Observation, limit: float, alpha: float = 0.0001) -> fl
         return 0.0
     else:
         # return observation.obs_airmasses.max() < limit
-        arg = (limit - observation.obs_airmasses.max()) / alpha
+        arg = (limit - np.max(observation.obs_airmasses)) / alpha
         return (np.tanh(arg) + 1) / 2
 
 
 def altitude(
     observation: Observation,
-    min: float = 0,
+    min: float = 20,
     max: float = 90,
 ) -> float:
     """
-    Altitude constraint merit function
+    Altitude merit function.
 
     Parameters
     ----------
@@ -180,32 +181,76 @@ def altitude(
         )
 
 
-def moon_separation(observation: Observation, min: float = 30.0) -> float:
+def moon_separation(
+    observation: Observation,
+    theta_lim: float = 20.0,
+    theta_start: float = 30.0,
+    alpha: float = 3.0,
+) -> float:
     """
     Moon separation constraint merit function
     TODO: this entire merit function has to be tested.
 
-    Parameters
+    m = ((sep - min_sep) / (max_sep - min_sep)) ** alpha
+
+    Parameters`
     ----------
     observation : Observation
         The Observation object to be used
     min : float, optional
         The minimum separation to the moon in degrees. Defaults to 30.0.
     """
-    # Create the AltAz frame for the moon
-    # TODO put this in the Night init.
-    # Can be done only once if calculated beforehand for the entire night
-    moon_altaz_frame = observation.night.observer.moon_altaz(
-        time=Time(observation.start_time, format="jd")
+    if alpha <= 0:
+        raise ValueError("alpha for moon_separation merit must be greater than 0")
+    if theta_lim >= theta_start:
+        raise ValueError("theta_lim must be less than theta_start")
+    if theta_lim <= 0 or theta_start <= 0:
+        raise ValueError("theta_lim and theta_start must be greater than 0")
+    # Find the moon altaz position at the times of the observation
+    moon_altaz_frame = observation.night.moon_altaz_frame
+    start_idx = np.searchsorted(
+        moon_altaz_frame.obstime.jd, observation.start_time, side="left"
+    )
+    end_idx = np.searchsorted(
+        moon_altaz_frame.obstime.jd, observation.end_time, side="right"
     )
     # Calculate moon distance throughout the exposure of the observation
-    range_moon_distance = observation.target.coords.separation(moon_altaz_frame).deg
+    sep = np.min(
+        observation.target.coords.separation(moon_altaz_frame[start_idx:end_idx]).deg
+    )
 
-    # TODO: Implement a merit that takes into account the moon illumination and distance
-    if range_moon_distance.min() < min:
+    # Calculate the value of the merit
+    if sep < theta_lim:
         return 0.0
-    else:
+    elif sep >= theta_start:
         return 1.0
+    else:
+        return ((sep - theta_lim) / (theta_start - theta_lim)) ** alpha
+
+
+# TODO: Implement a merit that takes into account the moon illumination and distance
+# def moon_illumination(observation: Observation, min: float = 0.0) -> float:
+#     """
+#     Moon illumination constraint merit function
+
+#     Parameters
+#     ----------
+#     observation : Observation
+#         The Observation object to be used
+#     min : float, optional
+#         The minimum moon illumination. Defaults to 0.0.
+#     """
+#     # Find the moon altaz position at the times of the observation
+#     moon_illumination = observation.night.moon_illumination
+#     start_idx = np.searchsorted(moon_illumination.obstime.jd, observation.start_time, side="left")
+#     end_idx = np.searchsorted(moon_illumination.obstime.jd, observation.end_time, side="right")
+#     # Calculate moon distance throughout the exposure of the observation
+#     illum = moon_illumination[start_idx:end_idx]
+
+#     if illum.min() < min:
+#         return 0.0
+#     else:
+#         return 1.0
 
 
 def end_time(observation: Observation, time: float) -> float:
