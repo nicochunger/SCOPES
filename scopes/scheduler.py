@@ -220,6 +220,174 @@ class Scheduler:
             obs2.feasible()
             obs2.evaluate_score()
 
+    def swap_observations(self, plan: Plan, index1: int, index2: int) -> Plan:
+        """
+        Swap two observations in the plan and recalculate the start times and scores of the
+        observations.
+
+        Parameters
+        ----------
+        plan : Plan
+            The plan to swap observations in
+        index1 : int
+            The index of the first observation to swap
+        index2 : int
+            The index of the second observation to swap
+
+        Returns
+        -------
+        Plan
+            The plan with the swapped observations
+        """
+        if index2 != index1 + 1:
+            raise ValueError("Observations to be swapped must be consecutive.")
+
+        # Ensure indices are within the range of the plan's observations
+        if index1 < 0 or index2 >= len(plan.observations):
+            raise IndexError("Swap indices are out of bounds.")
+
+        # Create a deep copy of the plan
+        swapped_plan = Plan()
+        obs_copy = self.obslist_deepcopy(plan.observations)
+        for obs in obs_copy:
+            swapped_plan.add_observation(obs)
+        sobs: List[Observation] = swapped_plan.observations
+
+        # Swap the observations
+        overhead_time = sobs[index2].start_time - sobs[index1].end_time
+        sobs[index1], sobs[index2] = (
+            sobs[index2],
+            sobs[index1],
+        )
+
+        # Calculate new overheads for the transitions between the previous and next observations
+        # Overhead between obs at index1-1 and index1
+        if index1 > 0:
+            # Calculate new overhead
+            overhead_time_previous = self.overheads.calculate_transition(
+                sobs[index1 - 1], sobs[index1]
+            )
+            # Update start time of observation at index1
+            sobs[index1].set_start_time(
+                sobs[index1 - 1].end_time + overhead_time_previous
+            )
+        else:
+            # In this case index1 is the first observation, so no previous overhead
+            # Set the start time of the observation at index2
+            sobs[index1].set_start_time(sobs[index2].start_time)
+        # Set the start time of the observation at index2
+        sobs[index2].set_start_time(sobs[index1].end_time + overhead_time)
+        # Overhead between obs at index2 and index2+1
+        if index2 < len(sobs) - 1:
+            # If index2 is not the last observation, calculate new overhead
+            overhead_time_next = self.overheads.calculate_transition(
+                sobs[index2], sobs[index2 + 1]
+            )
+            if index2 + 1 == len(sobs) - 1:
+                # In this case index2+1 is the last observation
+                # So update it and continue
+                sobs[index2 + 1].set_start_time(
+                    sobs[index2].end_time + overhead_time_next
+                )
+            else:
+                # If index2+1 is not the last observation, update start times of all remaining observations
+                current_overhead = overhead_time_next
+                for i in range(index2 + 1, len(sobs)):
+                    if i == len(sobs) - 1:
+                        break
+                    # Overhead time from observation[i] to observation[i+1]
+                    overhead_next = sobs[i + 1].start_time - sobs[i].end_time
+                    sobs[i].set_start_time(sobs[i - 1].end_time + current_overhead)
+                    current_overhead = overhead_next
+                # Update start time of the last observation
+                sobs[-1].set_start_time(sobs[-2].end_time + current_overhead)
+
+        else:
+            # In this case index2 is the last observation, so no next overhead and no need to
+            # update start times as there are no remaining observations
+            pass
+
+        # TODO check that last obs is within the night limits
+
+        # Update the score of the observations
+        for obs in sobs:
+            obs.update_alt_airmass()
+            obs.feasible()
+            obs.evaluate_score()
+
+        # Evaluate the plan
+        swapped_plan.evaluate_plan()
+
+        return swapped_plan
+
+    def optimize_plan(self, plan: Plan, iterations: int = None) -> Plan:
+        """
+        Optimize the plan testing permutations of the observations to find a more optimal plan from
+        the observations in the given plan.
+
+        It works by going through the observations from left to right and swapping consecutive
+        observations to see if the score of the plan can be improved. If it does, it keeps the
+        swap, otherwise it reverts to the original plan. It then moves to the next pair of
+        observations and repeats the process until the end of the plan. It then repeats the
+        process in the reverse order. It does this for a number of iterations until the score of
+        the plan doesn't improve.
+
+        Parameters
+        ----------
+        plan : Plan
+            The plan to optimize
+
+        Returns
+        -------
+        Plan
+            The optimized plan
+        """
+
+        # Create a deep copy of the plan
+        plan_copy = Plan()
+        obs_copy = self.obslist_deepcopy(plan.observations)
+        for obs in obs_copy:
+            plan_copy.add_observation(obs)
+
+        # TODO Remove Culmination mapping merit, and add the airmass efficiency merit
+        # The airmass efficiency merit basically evalutes the inverse airmass as the merit
+        # So that it maximizes targets being at the best overall airmass.
+
+        # Evaluate the plan and intialize variables
+        plan_copy.evaluate_plan()
+        current_score = plan_copy.score
+        improved = True
+        iteration_count = 0
+
+        # Make the forward and backward passes until the score doesn't improve
+        while improved and (iterations is None or iteration_count < iterations):
+            improved = False
+            # Forward pass
+            for i in range(len(plan_copy.observations) - 1):
+                new_plan = self.swap_observations(plan_copy, i, i + 1)
+                new_plan.evaluate_plan()
+                new_score = new_plan.score
+                if new_score > current_score:
+                    plan_copy = new_plan
+                    current_score = new_score
+                    improved = True
+
+            # Backward pass
+            for i in range(len(plan_copy.observations) - 1, 0, -1):
+                new_plan = self.swap_observations(plan_copy, i - 1, i)
+                new_plan.evaluate_plan()
+                new_score = new_plan.score
+                if new_score > current_score:
+                    plan_copy = new_plan
+                    current_score = new_score
+                    improved = True
+
+            iteration_count += 1
+            if not improved:
+                break
+
+        return plan_copy
+
 
 ## ----- SPECIFIC SCHEDULERS ----- ##
 class generateQ(Scheduler):
