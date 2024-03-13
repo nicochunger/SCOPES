@@ -109,6 +109,9 @@ class Night:
             )
             self.night_time_range = self.time_range_astronomical
 
+        # Calculate the alt-az frame of the moon for the night
+        self.moon_altaz_frame = self.observer.moon_altaz(self.night_time_range)
+
     def calculate_solar_midnight(self):
         """
         Calculate the solar midnight for the night.
@@ -606,7 +609,7 @@ class Observation:
         end_idx = np.searchsorted(night_range_jd, self.end_time, side="right")
         self.obs_time_range = night_range_jd[start_idx:end_idx]
         self.obs_altitudes = self.night_altitudes[start_idx:end_idx]
-        self.obs_airmasses = self.night_airmasses[start_idx:end_idx]
+        self.obs_airmasses = self.night_airmasses[start_idx:end_idx].value
 
     def feasible(self, verbose: bool = False) -> float:
         """
@@ -693,9 +696,12 @@ class Observation:
 
         # --- Efficiency ---
         # Efficiency merits that check for scientific goal
-        efficiency = np.mean(
-            [merit.evaluate(self) for merit in self.target.efficiency_merits]
-        )
+        if len(self.target.efficiency_merits) == 0:
+            efficiency = 1.0
+        else:
+            efficiency = np.mean(
+                [merit.evaluate(self) for merit in self.target.efficiency_merits]
+            )
 
         # --- Rank Score ---
         # Calculate total rank score by taking the product of fairness, sensibility and efficiency
