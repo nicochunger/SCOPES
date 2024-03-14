@@ -5,7 +5,7 @@ from typing import Any, List, Tuple, Union
 
 from tqdm.auto import tqdm
 
-from .merits import end_time
+from .merits import airmass_efficiency, end_time
 from .scheduler_components import Merit, Night, Observation, Overheads, Plan
 
 
@@ -349,13 +349,29 @@ class Scheduler:
         for obs in obs_copy:
             plan_copy.add_observation(obs)
 
-        # TODO Remove Culmination mapping merit, and add the airmass efficiency merit
-        # The airmass efficiency merit basically evalutes the inverse airmass as the merit
-        # So that it maximizes targets being at the best overall airmass.
+        # Remove Culmination efficiency merit, and add the airmass efficiency merit
+        for obs in plan_copy.observations:
+            # Check if the culmination_efficiency merit is present
+            for merit in obs.target.efficiency_merits:
+                if "culmination" in merit.func.__name__.lower():
+                    # Remove the culmination efficiency merit
+                    obs.target.efficiency_merits.remove(merit)
+            # Add the airmass efficiency merit
+            obs.target.add_merit(
+                Merit(
+                    "AirmassEfficiency",
+                    airmass_efficiency,
+                    merit_type="efficiency",
+                )
+            )
+            # Update scores with the new merit
+            obs.feasible()
+            obs.evaluate_score()
 
         # Evaluate the plan and intialize variables
         plan_copy.evaluate_plan()
         current_score = plan_copy.score
+        print(f"Initial plan score: {current_score:.4f}")
         improved = True
         iteration_count = 0
 
@@ -385,6 +401,9 @@ class Scheduler:
             iteration_count += 1
             if not improved:
                 break
+        print(
+            f"Optimized plan score: {current_score:.4f} (after {iteration_count} iterations)"
+        )
 
         return plan_copy
 
