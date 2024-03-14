@@ -288,10 +288,8 @@ def culmination(observation: Observation, verbose: bool = False) -> float:
     return altitude_prop
 
 
-def culmination_mapping(observation: Observation, verbose: bool = False) -> float:
+def culmination_efficiency(observation: Observation, verbose: bool = False) -> float:
     """
-    ObservationEfficiency
-
     This merit is designed to make the scheduling of astronomical observations more efficient by
     expanding the selection of observable stars beyond those reaching their culmination (highest
     point in the sky) during the night. The normal Culmination merit misses out on stars that
@@ -444,6 +442,19 @@ def time_critical(
     if verbose:
         print(f"time_critical {merit = }")
     return merit
+
+
+def airmass_efficiency(observation: Observation) -> float:
+    """
+    Airmass efficiency merit function. Defined as the inverse of the maximum airmass reached during
+    the observation.
+
+    Parameters
+    ----------
+    observation : Observation
+        The observation object.
+    """
+    return 1 / np.max(observation.obs_airmasses)
 
 
 def gaussian(x, sigma):
