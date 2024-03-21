@@ -197,6 +197,7 @@ class Program:
         priority: int = None,
         time_share_allocated: float = 0.0,
         plot_color: str = None,
+        inst_plot_color: str = None,
     ):
         """
         Initialize a new instance of the Program class.
@@ -229,13 +230,18 @@ class Program:
         if not isinstance(priority, int):
             raise TypeError("Priority must be an integer")
         self.priority = priority
-        # Check that plot_color is a valid hex color code
-        if not (
-            bool(re.search(re.compile("^#([A-Fa-f0-9]{6})$"), plot_color))
-            or (plot_color is None)
-        ):
-            raise ValueError("plot_color must be a valid hex color code")
+        # Check that plot_color is a valid hex color code if its not None
+        if plot_color is not None:
+            if not (bool(re.search(re.compile("^#([A-Fa-f0-9]{6})$"), plot_color))):
+                raise ValueError("plot_color must be a valid hex color code")
         self.plot_color = plot_color
+        # Check that inst_plot_color is a valid hex color code if its not None
+        if inst_plot_color is not None:
+            if not (
+                bool(re.search(re.compile("^#([A-Fa-f0-9]{6})$"), inst_plot_color))
+            ):
+                raise ValueError("inst_plot_color must be a valid hex color code")
+        self.inst_plot_color = inst_plot_color
         # Check that time_share_allocated is valid
         if not (0 <= time_share_allocated <= 1):
             raise ValueError("Time share must be between 0 and 1")
@@ -609,6 +615,7 @@ class Observation:
         end_idx = np.searchsorted(night_range_jd, self.end_time, side="right")
         self.obs_time_range = night_range_jd[start_idx:end_idx]
         self.obs_altitudes = self.night_altitudes[start_idx:end_idx]
+        self.obs_azimuths = self.night_azimuths[start_idx:end_idx]
         self.obs_airmasses = self.night_airmasses[start_idx:end_idx].value
 
     def feasible(self, verbose: bool = False) -> float:
@@ -635,39 +642,6 @@ class Observation:
                 break
         self.sensibility_value = np.prod(veto_merit_values)
         return self.sensibility_value  # type: ignore
-
-    # def update_start_time(self, previous_obs):
-    #     """
-    #     Updates the start time of the observation based on the previous observation taking into
-    #     account the overheads and instrument change.
-
-    #     Parameters
-    #     ----------
-    #     previous_obs : Observation
-    #         The previous observation
-    #     """
-    #     # TODO This entire section has to be redone to be adaptable. For now it is hardcoded
-    #     # but the user should be able to say how the overheads should be calculated.
-    #     sep_deg = self.separation_calc(previous_obs)
-    #     # FIX: This is a dummy slew time and inst change for now, replace with fetching from config file
-    #     slew_rate = 2  # degrees per second
-    #     slew_time = (sep_deg / slew_rate) / 86400  # in days
-    #     cor_readout = 0.0002315  # in days
-    #     inst_change = 0.0
-    #     if previous_obs.target.program.instrument != self.target.program.instrument:
-    #         # If the instrument is different, then there is a configuration time
-    #         inst_change = 0.00196759  # 170 seconds in days
-    #     self.start_time = previous_obs.end_time + slew_time + cor_readout + inst_change
-    #     self.end_time = self.start_time + self.exposure_time
-    #     if self.end_time > self.night.obs_within_limits[1]:
-    #         # Set score to 0 if observation goes beyond the end of the night
-    #         self.score = 0.0
-    #     else:
-    #         # Update the time array becaue the start time changed
-    #         self.update_alt_airmass()
-    #         # Calculate new rank score based on new start time
-    #         self.feasible()
-    #         self.evaluate_score()
 
     def evaluate_score(self, verbose: bool = False) -> float:
         """
@@ -715,6 +689,20 @@ class Observation:
             print(f"Rank score: {self.score}")
 
         return self.score
+
+    def update_start_and_score(self, start_time):
+        """
+        Update the start time of the observation and recalculate the score.
+
+        Parameters
+        ----------
+        start_time : float
+            The new start time to set for the observation
+        """
+        self.set_start_time(start_time)
+        self.update_alt_airmass()
+        self.feasible()
+        self.evaluate_score()
 
     def __str__(self):
         lines = [
@@ -811,7 +799,7 @@ class Overheads:
         """
         # Calculate the difference in altitude and azimuth between the two observations
         time_idx = np.searchsorted(
-            obs1.night.night_time_range.jd, obs1.end_time, side="right"
+            obs1.night.night_time_range.jd, obs1.end_time, side="left"
         )
         obs1_alt = obs1.night_altitudes[time_idx]
         obs1_az = obs1.night_azimuths[time_idx]
@@ -868,7 +856,7 @@ class Plan:
     """
 
     def __init__(self):
-        self.observations = []
+        self.observations: List[Observation] = []
         self.score = 0.0
         self.evaluation = 0.0
 
@@ -900,18 +888,14 @@ class Plan:
             return
         else:
             first_obs = self.observations[0]
-            observation_time = 0.0  # first_obs.exposure_time
-            for obs in self.observations:
-                observation_time += obs.exposure_time
+            observation_time = np.sum([obs.exposure_time for obs in self.observations])
             # Check that overhead and observation time add up to the total time
-            overhead_time = (
-                self.observations[-1].end_time - first_obs.start_time - observation_time
-            )
+            total_time = self.observations[-1].end_time - first_obs.start_time
+            overhead_time = total_time - observation_time
             available_obs_time = (
                 first_obs.night.obs_within_limits[1]
                 - first_obs.night.obs_within_limits[0]
             )
-            total_time = self.observations[-1].end_time - first_obs.start_time
             unused_time = available_obs_time - observation_time - overhead_time
 
             self.observation_time = timedelta(days=observation_time)
@@ -920,7 +904,19 @@ class Plan:
             self.overhead_ratio = overhead_time / total_time
             self.observation_ratio = observation_time / total_time
 
-    def evaluate_plan(self, w_score: float = 0.5, w_overhead: float = 0.5) -> float:
+    def calculate_avg_airmass(self):
+        """
+        Calculate the average airmass of the observations in the plan.
+        """
+        self.avg_airmass = np.mean(
+            [
+                np.max(obs.obs_airmasses)
+                for obs in self.observations
+                if len(obs.obs_airmasses) > 0
+            ]
+        )
+
+    def evaluate_plan(self, w_score: float = 0.2, w_overhead: float = 0.8) -> float:
         """
         Calculates the evaluation of the plan. This is the mean of the individual scores of all
         observations times the observation ratio of the plan. This is to compensate between maximum
@@ -944,15 +940,18 @@ class Plan:
         self.score = float(
             np.mean([obs.score for obs in self.observations]) if len(self) > 0 else 0
         )  # type: ignore
+        # Calculate the overheads for the plan
         self.calculate_overhead()
-        self.evaluation = self.score * self.observation_ratio
-        # self.evaluation = w_score * self.score + w_overhead * self.observation_ratio
+        # Calculate the average airmass of the observations in the plan
+        self.calculate_avg_airmass()
+        # Calculate the evaluation of the plan
+        # self.evaluation = self.score * self.observation_ratio
+        self.evaluation = w_score * self.score + w_overhead * self.observation_ratio
         return self.evaluation
 
     def print_stats(self):
         """Prints some general information and statistics of the plan."""
         self.evaluate_plan()
-        self.calculate_overhead()
         print(f"Length = {len(self)}")
         print(f"Score = {self.score:.6f}")
         print(f"Evaluation = {self.evaluation:.6f}")
@@ -960,6 +959,7 @@ class Plan:
         print(f"Overhead time = {self.overhead_time}")
         print(f"Observation ratio = {self.observation_ratio:.5f}")
         print(f"Overhead ratio = {self.overhead_ratio:.5f}")
+        print(f"Avg airmass = {self.avg_airmass:.5f}")
 
     def plot(self, display: bool = True, save: bool = False, path: str = None):
         """
@@ -1009,6 +1009,7 @@ class Plan:
 
         fig, ax1 = plt.subplots(figsize=(13, 5))
 
+        # Plot the altitude tracks of the targets
         for i, obs in enumerate(self.observations):
             # TODO clean up this part by using existing variables in the obs objects
             solar_altaz_frame = obs.target.coords.transform_to(
@@ -1035,6 +1036,8 @@ class Plan:
                 lw=2,
                 solid_capstyle="round",
             )
+
+        # TODO Plot the tracks of the moon
 
         # Plot shaded areas between sunset and civil, nautical, and astronomical evening
         y_range = np.arange(0, 91)
@@ -1363,6 +1366,198 @@ class Plan:
                 fig.write_image(path, format="png")
 
         fig.show()
+
+    def plot_polar(self, display: bool = True, save: bool = False, path: str = None):
+        # Create polar plot
+        fig = plt.figure(figsize=(8, 8))
+        ax = plt.subplot(111, polar=True)
+        for i, obs in enumerate(self.observations):
+            # Plot each observation as a line in the polar plot
+            ax.plot(
+                np.radians(obs.obs_azimuths),
+                obs.obs_altitudes,
+                # label=obs.target.program.progID,
+                color=obs.target.program.plot_color,
+            )
+            if i == 0:
+                # Plot a greend point at the start of the night
+                ax.plot(
+                    np.radians(obs.obs_azimuths[0]),
+                    obs.obs_altitudes[0],
+                    "go",
+                    label="Start of the night",
+                )
+            elif i == len(self.observations) - 1:
+                # Plot a red point at the end of the night
+                ax.plot(
+                    np.radians(obs.obs_azimuths[-1]),
+                    obs.obs_altitudes[-1],
+                    "ro",
+                    label="End of the night",
+                )
+
+            # Connect the last point of the current observation with the first point of the next observation
+            if i < len(self.observations) - 1:
+                ax.plot(
+                    [
+                        np.radians(obs.obs_azimuths[-1]),
+                        np.radians(self.observations[i + 1].obs_azimuths[0]),
+                    ],
+                    [obs.obs_altitudes[-1], self.observations[i + 1].obs_altitudes[0]],
+                    ls="dashed",
+                    lw=0.6,
+                    c="gray",
+                )
+
+        # Additional plot formatting
+        ax.set_theta_zero_location("N")  # Set 0 degrees at the top
+        ax.set_theta_direction(-1)  # Set the rotation of the plot clockwise
+        ax.set_title("Azimuth vs. Altitude", va="bottom")
+        ax.set_ylim(90, 30)
+        plt.legend(loc="best")
+
+        # Saving the plot if requested
+        if save:
+            if path is None:
+                raise ValueError("Path must be specified if save is True")
+            else:
+                fig.write_image(path, format="png")
+
+        if display:
+            plt.show()
+        else:
+            plt.close()
+
+    def plot_altaz(
+        self, display: bool = True, save: bool = False, path: str = None
+    ) -> None:
+        """
+        Plot the azimuth and altitude of the observations.
+
+        Parameters
+        ----------
+        display : bool, optional
+            Option to display the plot. Defaults to True.
+        save : bool, optional
+            If True, and path is given, save the plot to a file. Defaults to False.
+        path : str, optional
+            The path to the file where the plot will be saved. Defaults to None. Ignored if save is
+            False.
+        """
+        # Initialize the figure and subplots
+        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 8), sharex=True)
+
+        # Get which programs are part of this plan
+        instruments = list(
+            set(
+                [
+                    (obs.target.program.instrument, obs.target.program.inst_plot_color)
+                    for obs in self.observations
+                ]
+            )
+        )
+        # Define unique colors for each instrument
+        # if the instuments have their inst_plot_color attribute set, use that color
+        # otherwise use the default color ('Pastel1' color pallette from matplotlib)
+        inst_default_colors = itertools.cycle(
+            [mcolors.rgb2hex(color) for color in plt.get_cmap("Pastel1").colors]
+        )
+        inst_colors = {}
+        for inst, col in instruments:
+            if col is None:
+                inst_colors[inst] = next(inst_default_colors)
+            else:
+                inst_colors[inst] = col
+
+        # Iterate through observations and plot them
+        for i, obs in enumerate(self.observations):
+            # Create arrays of JD for each observation point
+            jd_times = np.linspace(obs.start_time, obs.end_time, len(obs.obs_azimuths))
+
+            # Plot azimuths and altitudes
+            ax1.plot(jd_times, obs.obs_azimuths, "-", lw=1, c="k")
+            ax2.plot(jd_times, obs.obs_altitudes, "-", lw=1, c="k")
+
+            # Plot diagonal line between this obs and start of the next
+            if i < len(self.observations) - 1:
+                ax1.plot(
+                    [jd_times[-1], self.observations[i + 1].start_time],
+                    [obs.obs_azimuths[-1], self.observations[i + 1].obs_azimuths[0]],
+                    "-"
+                    if abs(
+                        obs.obs_azimuths[-1] - self.observations[i + 1].obs_azimuths[0]
+                    )
+                    <= 180
+                    else "--",
+                    lw=1,
+                    c="k",
+                )
+                ax2.plot(
+                    [jd_times[-1], self.observations[i + 1].start_time],
+                    [obs.obs_altitudes[-1], self.observations[i + 1].obs_altitudes[0]],
+                    "-",
+                    lw=1,
+                    c="k",
+                )
+
+        # Shaded regions
+        for i in range(len(self.observations)):
+            # Shade the observation time color coded by instrument
+            ax1.axvspan(
+                self.observations[i].start_time,
+                self.observations[i].end_time,
+                color=inst_colors[self.observations[i].target.program.instrument],
+                alpha=0.5,
+            )
+            ax2.axvspan(
+                self.observations[i].start_time,
+                self.observations[i].end_time,
+                color=inst_colors[self.observations[i].target.program.instrument],
+                alpha=0.5,
+            )
+            if i < len(self.observations) - 1:
+                # Shade the overhead between observations
+                end_current_obs = self.observations[i].end_time
+                start_next_obs = self.observations[i + 1].start_time
+                if start_next_obs > end_current_obs:  # Ensure there is a gap
+                    ax1.axvspan(
+                        end_current_obs, start_next_obs, color="grey", alpha=0.7
+                    )
+                    ax2.axvspan(
+                        end_current_obs, start_next_obs, color="grey", alpha=0.7
+                    )
+
+        # Use scatter plot for the legend markers
+        for inst, color in inst_colors.items():
+            ax1.scatter(
+                [], [], label=inst, color=color, edgecolor="none", s=100, marker="s"
+            )
+
+        # Adjusting legend
+        ax1.legend(loc="best", title="Instruments")
+
+        # Set the labels and titles
+        ax1.set_ylabel("Azimuth Angle [deg]")
+        ax2.set_ylabel("Elevation Angle [deg]")
+        ax2.set_xlabel("Observation Time [JD]")
+
+        # Set titles and layout
+        ax1.set_title(
+            "Azimuth\n(dashed line means it actually crosses 0/360 deg and goes the other way than shown)"
+        )
+        ax2.set_title("Elevation")
+
+        # Saving the plot if requested
+        if save:
+            if path is None:
+                raise ValueError("Path must be specified if save is True")
+            else:
+                fig.write_image(path, format="png")
+
+        if display:
+            plt.show()
+        else:
+            plt.close()
 
     def print_plan(self, save: bool = False, path: str = None):
         """

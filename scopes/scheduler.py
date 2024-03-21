@@ -3,6 +3,7 @@ from dataclasses import dataclass, field
 from queue import PriorityQueue
 from typing import Any, List, Tuple, Union
 
+import numpy as np
 from tqdm.auto import tqdm
 
 from .merits import airmass_efficiency, end_time
@@ -111,7 +112,7 @@ class Scheduler:
         # Calculate the extended time range for the culmination merit
         self.night.calculate_culmination_window(self.obs_list)
 
-    def check_max_plan_length(self, max_plan_length):
+    def check_max_plan_length(self, max_plan_length: int):
         """
         Checks the validity of the maximum plan length.
 
@@ -141,13 +142,17 @@ class Scheduler:
             raise ValueError("max_plan_length should be a positive integer or None.")
         return max_plan_length
 
-    def obslist_deepcopy(self, obslist):
+    def obslist_deepcopy(self, obslist: List[Observation]):
         """
         An implementation of deepcopying a list of observations by creating new emtpy observations
         and assigning the attributes of the original observations to the new ones.
 
         This is a workaround for the fact that deepcopy is very slow for these types of objects.
         This alone can speed up the scheduling algorithms by a factor of 10.
+
+        The only caveat is that this is not actually a deepcopy as the Target objects inside the
+        Observation objects are not copied. This means is you make a modification on the Targets
+        within these observation then this will affect the original observations as well.
 
         Parameters
         ----------
@@ -160,6 +165,30 @@ class Scheduler:
             new_obs.__dict__ = obs.__dict__.copy()
             new_obslist.append(new_obs)
         return new_obslist
+
+    def plan_deepcopy(self, plan: Plan):
+        """
+        An implementation of deepcopying a plan by creating new emtpy observations and assigning
+        the attributes of the original observations to the new ones.
+
+        This is a workaround for the fact that deepcopy is very slow for these types of objects.
+        This alone can speed up the scheduling algorithms by a factor of 10.
+
+        Parameters
+        ----------
+        plan : Plan
+            The plan to deepcopy
+        """
+        # Create a new empty Plan
+        new_plan = Plan()
+        # Deepcopy the observations
+        obs_copy = self.obslist_deepcopy(plan.observations)
+        # Add the observations to the new plan
+        for obs in obs_copy:
+            new_plan.add_observation(obs)
+        # Evaluate plan
+        new_plan.evaluate_plan()
+        return new_plan
 
     def update_start_times(
         self, observations: List[Observation], new_start_time: float
@@ -247,10 +276,7 @@ class Scheduler:
             raise IndexError("Swap indices are out of bounds.")
 
         # Create a deep copy of the plan
-        swapped_plan = Plan()
-        obs_copy = self.obslist_deepcopy(plan.observations)
-        for obs in obs_copy:
-            swapped_plan.add_observation(obs)
+        swapped_plan = self.plan_deepcopy(plan)
         sobs: List[Observation] = swapped_plan.observations
 
         # Swap the observations
@@ -307,8 +333,6 @@ class Scheduler:
             # update start times as there are no remaining observations
             pass
 
-        # TODO check that last obs is within the night limits
-
         # Update the score of the observations
         for obs in sobs:
             obs.update_alt_airmass()
@@ -319,6 +343,307 @@ class Scheduler:
         swapped_plan.evaluate_plan()
 
         return swapped_plan
+
+    def move_observation(self, plan: Plan, index: int, new_index: int) -> Plan:
+        """
+        Move an observation to a new index in the plan. This is simply done as a succession of
+        swaps between the observation and the observation at the new index.
+
+        Parameters
+        ----------
+        plan : Plan
+            The plan to move the observation in
+        index : int
+            The index of the observation to move
+        new_index : int
+            The new index to move the observation to
+
+        Returns
+        -------
+        Plan
+            The plan with the moved observation
+        """
+        # Create a deep copy of the plan
+        moved_plan = self.plan_deepcopy(plan)
+
+        # If the new index is the same as the old index, return the original plan
+        if new_index == index:
+            return moved_plan
+
+        # If the new index is greater than the old index, move the observation to the new index
+        # by swapping it with the observations to its right until it reaches the new index position
+        elif new_index > index:
+            for idx in range(index, new_index):
+                moved_plan = self.swap_observations(moved_plan, idx, idx + 1)
+
+        # If the new index is less than the old index, move the observation to the new index
+        # by swapping it with the observations to its left until it reaches the new index position
+        else:
+            for idx in range(index, new_index, -1):
+                moved_plan = self.swap_observations(moved_plan, idx - 1, idx)
+
+        # Check that the plan is still feasible
+        for obs in moved_plan.observations:
+            if not obs.score:
+                # If the plan is not feasible, return the original plan
+                return plan
+
+        return moved_plan
+
+    def swap_observations_any(self, plan: Plan, index1: int, index2: int) -> Plan:
+        """
+        Swaps any two observations in the plan adjusts the start times and overheads for this
+        new schedule.
+
+        Parameters
+        ----------
+        plan : Plan
+            The plan to swap observations in
+        index1 : int
+            The index of the first observation to swap
+        index2 : int
+            The index of the second observation to swap
+
+        Returns
+        -------
+        Plan
+            The plan with the swapped observations
+        """
+        # Ensure indices are within the range of the plan's observations
+        if (
+            index1 < 0
+            or index1 >= len(plan.observations)
+            or index2 < 0
+            or index2 >= len(plan.observations)
+        ):
+            raise IndexError("Swap indices are out of bounds.")
+
+        if index1 == index2:
+            # No need to swap, return the original plan
+            return plan
+
+        # Create copy of the plan to not modify the original one
+        plan_copy = self.plan_deepcopy(plan)
+
+        # Swap the observations
+        obss = plan_copy.observations
+        obss[index1], obss[index2] = obss[index2], obss[index1]
+        # Swap their start times and update the alt airmasses
+        # Save the start time of obs1 before it gets changed
+        obs_idx1_start = obss[index1].start_time
+        obss[index1].update_start_and_score(obss[index2].start_time)
+        obss[index2].update_start_and_score(obs_idx1_start)
+        if not (obss[index2].score or obss[index1].score):
+            # If any of the scores are 0, the plan is infeasible, return the original plan
+            # print("Plan became infeasible after swap")
+            return plan
+
+        # Calculate new overheads for the transitions between the previous and next observations
+        # Calculate new transition for all obs from index1-1 until the end.
+        left_idx = min(index1, index2)
+        start_idx = left_idx - 1 if left_idx > 0 else 0
+        for idx in range(start_idx, len(obss) - 1):
+            # Calculate new overhead
+            new_overhead = self.overheads.calculate_transition(obss[idx], obss[idx + 1])
+            # Update start time of next observation
+            obss[idx + 1].update_start_and_score(obss[idx].end_time + new_overhead)
+            if obss[idx + 1].score == 0.0:
+                # Observation becomes infeasible, abort and return the original plan
+                # print("Plan became infeasible after swap")
+                return plan
+
+        # Evaluate plan
+        plan_copy.evaluate_plan()
+
+        return plan_copy
+
+    def lsh_optimization_swap(
+        self, plan: Plan, iterations: int = None, verbose: bool = False
+    ) -> Plan:
+        """
+        Optimize the plan using the LSH (Local Search Heuristic) algorithm. It works by trying
+        to swap each observation with every other observation and checking if the overhead time
+        is reduced. If it is, it keeps the swap with the lowest overhead time.
+
+        Parameters
+        ----------
+        plan : Plan
+            The plan to optimize
+
+        Returns
+        -------
+        Plan
+            The optimized plan
+        """
+        # Initialize the best plan to the original plan
+        best_plan = self.plan_deepcopy(plan)
+        print(f"Initial plan overhead time: {best_plan.overhead_time}")
+
+        improved = True
+        iteration_count = 0
+
+        # TODO - Implement a tracking system to keep track of plans that were already rejected
+        # This is to avoid recalculating the move operation of plans that were already done
+        # rejected_states = {}
+
+        # Make the forward and backward passes until the score doesn't improve
+        while improved and (iterations is None or iteration_count < iterations):
+            improved = False
+            current_plan = self.plan_deepcopy(best_plan)
+            # The indices of the observations to visit (variable U in the algorithm)
+            pos_to_visit = list(range(len(plan.observations)))
+            move_count = 0
+            while len(pos_to_visit) > 0:
+                # Select a random position to visit and remove it from the list
+                pos = pos_to_visit.pop(np.random.randint(0, len(pos_to_visit)))
+                # Go through all posible swaps and keep track of the overhead times
+                plans = []
+                overheads = []
+                indexes = []
+                for i in range(len(plan.observations)):
+                    if i == pos:
+                        # Skip the unnecesary swap with itself
+                        continue
+                    # Swap the observations
+                    new_plan = self.swap_observations_any(best_plan, pos, i)
+                    if new_plan == best_plan:
+                        # If the new plan is the same as the original plan, continue
+                        # This happens when the swap is not feasible
+                        continue
+                    # Save the overhead time
+                    plans.append(new_plan)
+                    overheads.append(new_plan.overhead_time)
+                    indexes.append(i)
+
+                # Find the plan with the lowest overhead time
+                # Check that overheads is not empty
+                if len(overheads) == 0:
+                    # If overheads is empty, there was no feasible swap, continue
+                    continue
+                else:
+                    idx_best_plan = np.argmin(overheads)
+                    tmp_best_plan = plans[idx_best_plan]
+                    # TODO idea: only accept the change if the time gain is "worth it"
+                    # Where worth it has to be defined where we can look at the general score and if
+                    # the score drop is too high to justify the time gain then the switch is not
+                    # accepted. Or something like that...
+                    if tmp_best_plan.overhead_time < best_plan.overhead_time:
+                        delta_t = best_plan.overhead_time - tmp_best_plan.overhead_time
+                        # print(
+                        #     f"Made move from {pos} to {indexes[idx_best_plan]}. Saved {delta_t} time."
+                        # )
+                        best_plan = tmp_best_plan
+                        move_count += 1
+
+            iteration_count += 1
+            if best_plan.overhead_time < current_plan.overhead_time:
+                improved = True
+
+            if verbose:
+                delta_t = current_plan.overhead_time - best_plan.overhead_time
+                print(f"\nOptimized plan overhead time: {best_plan.overhead_time}")
+                print(
+                    f"Total time saved in iteration {iteration_count} with {move_count} moves: {delta_t}\n"
+                )
+
+        if verbose:
+            print("Total time saved: ", plan.overhead_time - best_plan.overhead_time)
+        return best_plan
+
+    def lsh_optimization_move(
+        self, plan: Plan, iterations: int = None, verbose: bool = False
+    ) -> Plan:
+        """
+        Optimize the plan using the LSH (Local Search Heuristic) algorithm. The same as v1
+        but using the move operation instead of swap. This means it moves an observation to any
+        other spot in the plan and checks if the overhead time is reduced. It moves it to the spot
+        with the lowest overhead time.
+        This is instead of a swap like the other.
+
+        Parameters
+        ----------
+        plan : Plan
+            The plan to optimize
+
+        Returns
+        -------
+        Plan
+            The optimized plan
+        """
+        # Initialize the best plan to the original plan
+        best_plan = self.plan_deepcopy(plan)
+        print(f"Initial plan overhead time: {best_plan.overhead_time}")
+
+        improved = True
+        iteration_count = 0
+
+        # TODO - Implement a tracking system to keep track of plans that were already rejected
+        # This is to avoid recalculating the move operation of plans that were already done
+        # rejected_states = {}
+
+        # Make the forward and backward passes until the score doesn't improve
+        while improved and (iterations is None or iteration_count < iterations):
+            improved = False
+            current_plan = self.plan_deepcopy(best_plan)
+            # The indices of the observations to visit (variable U in the algorithm)
+            pos_to_visit = list(range(len(plan.observations)))
+            move_count = 0
+            while len(pos_to_visit) > 0:
+                # Select a random position to visit and remove it from the list
+                pos = pos_to_visit.pop(np.random.randint(0, len(pos_to_visit)))
+                # Go through all posible swaps and keep track of the overhead times
+                plans = []
+                overheads = []
+                indexes = []
+                for i in range(len(plan.observations)):
+                    if i == pos:
+                        # Skip the unnecesary swap with itself
+                        continue
+                    # Swap the observations
+                    new_plan = self.move_observation(best_plan, pos, i)
+                    if new_plan == best_plan:
+                        # If the new plan is the same as the original plan, continue
+                        # This happens when the swap is not feasible
+                        continue
+                    # Save the overhead time
+                    plans.append(new_plan)
+                    overheads.append(new_plan.overhead_time)
+                    indexes.append(i)
+
+                # Find the plan with the lowest overhead time
+                # Check that overheads is not empty
+                if len(overheads) == 0:
+                    # If overheads is empty, there was no feasible swap, continue
+                    continue
+                else:
+                    idx_best_plan = np.argmin(overheads)
+                    tmp_best_plan = plans[idx_best_plan]
+                    # TODO idea: only accept the change if the time gain is "worth it"
+                    # Where worth it has to be defined where we can look at the general score and if
+                    # the score drop is too high to justify the time gain then the switch is not
+                    # accepted. Or something like that...
+                    if tmp_best_plan.overhead_time < best_plan.overhead_time:
+                        delta_t = best_plan.overhead_time - tmp_best_plan.overhead_time
+                        # print(
+                        #     f"Made move from {pos} to {indexes[idx_best_plan]}. Saved {delta_t} time."
+                        # )
+                        best_plan = tmp_best_plan
+                        move_count += 1
+
+            iteration_count += 1
+            if best_plan.overhead_time < current_plan.overhead_time:
+                improved = True
+
+            if verbose:
+                delta_t = current_plan.overhead_time - best_plan.overhead_time
+                print(f"\nOptimized plan overhead time: {best_plan.overhead_time}")
+                print(
+                    f"Total time saved in iteration {iteration_count} with {move_count} moves: {delta_t}\n"
+                )
+
+        if verbose:
+            print("Total time saved: ", plan.overhead_time - best_plan.overhead_time)
+        return best_plan
 
     def optimize_plan(self, plan: Plan, iterations: int = None) -> Plan:
         """
@@ -403,6 +728,69 @@ class Scheduler:
                 break
         print(
             f"Optimized plan score: {current_score:.4f} (after {iteration_count} iterations)"
+        )
+
+        return plan_copy
+
+    def optimize_overheads(self, plan: Plan, iterations: int = None) -> Plan:
+        """
+        Optimize the plan by testing permutations of the observations to find a more optimal plan
+        from the observations in the given plan. It works by going through the observations from
+        left to right and swapping consecutive observations to see if the score of the plan can be
+        improved. If it does, it keeps the swap, otherwise it reverts to the original plan. It then
+        moves to the next pair of observations and repeats the process until the end of the plan.
+        It then repeats the process in the reverse order. It does this for a number of iterations
+        until the score of the plan doesn't improve.
+
+        Parameters
+        ----------
+        plan : Plan
+            The plan to optimize
+
+        Returns
+        -------
+        Plan
+            The optimized plan
+        """
+
+        # Create a deep copy of the plan
+        plan_copy = deepcopy(plan)
+
+        # Evaluate the plan and intialize variables
+        plan_copy.evaluate_plan()
+        current_overhead = plan_copy.overhead_time
+        print(f"Initial plan overhead time: {current_overhead}")
+        improved = True
+        iteration_count = 0
+
+        # Make the forward and backward passes until the score doesn't improve
+        while improved and (iterations is None or iteration_count < iterations):
+            improved = False
+            # Forward pass
+            for i in range(len(plan_copy.observations) - 1):
+                new_plan = self.swap_observations(plan_copy, i, i + 1)
+                new_plan.evaluate_plan()
+                new_overhead = new_plan.overhead_time
+                if new_overhead > current_overhead:
+                    plan_copy = new_plan
+                    current_overhead = new_overhead
+                    improved = True
+
+            # Backward pass
+            for i in range(len(plan_copy.observations) - 1, 0, -1):
+                new_plan = self.swap_observations(plan_copy, i - 1, i)
+                new_plan.evaluate_plan()
+                new_overhead = new_plan.overhead_time
+                if new_overhead > current_overhead:
+                    plan_copy = new_plan
+                    current_overhead = new_overhead
+                    improved = True
+
+            iteration_count += 1
+            if not improved:
+                break
+        print(
+            f"Optimized plan overhead time: {current_overhead} (after {iteration_count} iterations)"
         )
 
         return plan_copy

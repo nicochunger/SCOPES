@@ -454,7 +454,10 @@ def airmass_efficiency(observation: Observation) -> float:
     observation : Observation
         The observation object.
     """
-    return 1 / np.max(observation.obs_airmasses)
+    if len(observation.obs_airmasses) == 0:
+        return 0.0
+    else:
+        return 1 / np.max(observation.obs_airmasses)
 
 
 def gaussian(x, sigma):
