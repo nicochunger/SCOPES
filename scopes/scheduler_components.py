@@ -961,7 +961,7 @@ class Plan:
         print(f"Overhead ratio = {self.overhead_ratio:.5f}")
         print(f"Avg airmass = {self.avg_airmass:.5f}")
 
-    def plot(self, display: bool = True, save: bool = False, path: str = None):
+    def plot(self, display: bool = True, path: str = None):
         """
         Plot the schedule for the night.
 
@@ -1041,24 +1041,45 @@ class Plan:
 
         # Plot shaded areas between sunset and civil, nautical, and astronomical evening
         y_range = np.arange(0, 91)
+        alpha_tw_fill = 0.2
         ax1.fill_betweenx(
-            y_range, sunset.datetime, civil_evening, color="yellow", alpha=0.2
+            y_range, sunset.datetime, civil_evening, color="yellow", alpha=alpha_tw_fill
         )
         ax1.fill_betweenx(
-            y_range, civil_evening, nautical_evening, color="orange", alpha=0.2
+            y_range,
+            civil_evening,
+            nautical_evening,
+            color="orange",
+            alpha=alpha_tw_fill,
         )
         ax1.fill_betweenx(
-            y_range, nautical_evening, astronomical_evening, color="red", alpha=0.2
+            y_range,
+            nautical_evening,
+            astronomical_evening,
+            color="red",
+            alpha=alpha_tw_fill,
         )
         # Same for the morning
         ax1.fill_betweenx(
-            y_range, civil_morning, sunrise.datetime, color="yellow", alpha=0.2
+            y_range,
+            civil_morning,
+            sunrise.datetime,
+            color="yellow",
+            alpha=alpha_tw_fill,
         )
         ax1.fill_betweenx(
-            y_range, nautical_morning, civil_morning, color="orange", alpha=0.2
+            y_range,
+            nautical_morning,
+            civil_morning,
+            color="orange",
+            alpha=alpha_tw_fill,
         )
         ax1.fill_betweenx(
-            y_range, astronomical_morning, nautical_morning, color="red", alpha=0.2
+            y_range,
+            astronomical_morning,
+            nautical_morning,
+            color="red",
+            alpha=alpha_tw_fill,
         )
         # Add text that have the words "civil", "nautical", and "astronomical".
         # These boxes are placed vertically at the times of each of them (both evening and morning)
@@ -1163,12 +1184,9 @@ class Plan:
         )  # Display the desired airmass values
         ax2.set_ylabel("Airmass")
         ax2.tick_params("y")
-        if save:
+        if path is not None:
             plt.tight_layout()
-            if path is None:
-                raise ValueError("path must be specified if save is True")
-            else:
-                plt.savefig(path, dpi=300)
+            plt.savefig(path, dpi=300)
         if display:
             plt.show()
         else:
@@ -1367,9 +1385,9 @@ class Plan:
 
         fig.show()
 
-    def plot_polar(self, display: bool = True, save: bool = False, path: str = None):
+    def plot_polar(self, display: bool = True, path: str = None):
         # Create polar plot
-        fig = plt.figure(figsize=(8, 8))
+        plt.figure(figsize=(8, 8))
         ax = plt.subplot(111, polar=True)
         for i, obs in enumerate(self.observations):
             # Plot each observation as a line in the polar plot
@@ -1417,20 +1435,16 @@ class Plan:
         plt.legend(loc="best")
 
         # Saving the plot if requested
-        if save:
-            if path is None:
-                raise ValueError("Path must be specified if save is True")
-            else:
-                fig.write_image(path, format="png")
+        if path is not None:
+            plt.tight_layout()
+            plt.savefig(path, format="png")
 
         if display:
             plt.show()
         else:
             plt.close()
 
-    def plot_altaz(
-        self, display: bool = True, save: bool = False, path: str = None
-    ) -> None:
+    def plot_altaz(self, display: bool = True, path: str = None) -> None:
         """
         Plot the azimuth and altitude of the observations.
 
@@ -1445,7 +1459,7 @@ class Plan:
             False.
         """
         # Initialize the figure and subplots
-        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 8), sharex=True)
+        _, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 8), sharex=True)
 
         # Get which programs are part of this plan
         instruments = list(
@@ -1507,13 +1521,13 @@ class Plan:
                 self.observations[i].start_time,
                 self.observations[i].end_time,
                 color=inst_colors[self.observations[i].target.program.instrument],
-                alpha=0.5,
+                alpha=0.7,
             )
             ax2.axvspan(
                 self.observations[i].start_time,
                 self.observations[i].end_time,
                 color=inst_colors[self.observations[i].target.program.instrument],
-                alpha=0.5,
+                alpha=0.7,
             )
             if i < len(self.observations) - 1:
                 # Shade the overhead between observations
@@ -1521,10 +1535,10 @@ class Plan:
                 start_next_obs = self.observations[i + 1].start_time
                 if start_next_obs > end_current_obs:  # Ensure there is a gap
                     ax1.axvspan(
-                        end_current_obs, start_next_obs, color="grey", alpha=0.7
+                        end_current_obs, start_next_obs, color="grey", alpha=0.8
                     )
                     ax2.axvspan(
-                        end_current_obs, start_next_obs, color="grey", alpha=0.7
+                        end_current_obs, start_next_obs, color="grey", alpha=0.8
                     )
 
         # Use scatter plot for the legend markers
@@ -1548,11 +1562,9 @@ class Plan:
         ax2.set_title("Elevation")
 
         # Saving the plot if requested
-        if save:
-            if path is None:
-                raise ValueError("Path must be specified if save is True")
-            else:
-                fig.write_image(path, format="png")
+        if path is not None:
+            plt.tight_layout()
+            plt.savefig(path, format="png")
 
         if display:
             plt.show()

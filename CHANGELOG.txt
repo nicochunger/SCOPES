@@ -1,6 +1,6 @@
 0.x.x - TBA
 
-- 
+- Implemented a Local Search Heuristic that optimizes the overall overhead time of a plan.
 
 0.2.0 - 07.03.2024
 
