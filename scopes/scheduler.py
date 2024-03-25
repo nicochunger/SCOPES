@@ -112,7 +112,7 @@ class Scheduler:
         # Calculate the extended time range for the culmination merit
         self.night.calculate_culmination_window(self.obs_list)
 
-    def check_max_plan_length(self, max_plan_length: int):
+    def _check_max_plan_length(self, max_plan_length: int):
         """
         Checks the validity of the maximum plan length.
 
@@ -142,7 +142,7 @@ class Scheduler:
             raise ValueError("max_plan_length should be a positive integer or None.")
         return max_plan_length
 
-    def obslist_deepcopy(self, obslist: List[Observation]):
+    def _obslist_deepcopy(self, obslist: List[Observation]):
         """
         An implementation of deepcopying a list of observations by creating new emtpy observations
         and assigning the attributes of the original observations to the new ones.
@@ -166,7 +166,7 @@ class Scheduler:
             new_obslist.append(new_obs)
         return new_obslist
 
-    def plan_deepcopy(self, plan: Plan):
+    def _plan_deepcopy(self, plan: Plan):
         """
         An implementation of deepcopying a plan by creating new emtpy observations and assigning
         the attributes of the original observations to the new ones.
@@ -182,7 +182,7 @@ class Scheduler:
         # Create a new empty Plan
         new_plan = Plan()
         # Deepcopy the observations
-        obs_copy = self.obslist_deepcopy(plan.observations)
+        obs_copy = self._obslist_deepcopy(plan.observations)
         # Add the observations to the new plan
         for obs in obs_copy:
             new_plan.add_observation(obs)
@@ -239,15 +239,15 @@ class Scheduler:
         # Update the start time of obs2
         obs2.set_start_time(obs1.end_time + total_overhead)
         # Recalculate the score of obs2
-        if obs2.end_time > self.night.obs_within_limits[1]:
-            # Set score to 0 if observation goes beyond the end of the night
-            obs2.score = 0.0
-        else:
-            # Update the time array becaue the start time changed
-            obs2.update_alt_airmass()
-            # Calculate new rank score based on new start time
-            obs2.feasible()
-            obs2.evaluate_score()
+        # if obs2.end_time > self.night.obs_within_limits[1]:
+        #     # Set score to 0 if observation goes beyond the end of the night
+        #     obs2.score = 0.0
+        # else:
+        # Update the time array becaue the start time changed
+        obs2.update_alt_airmass()
+        # Calculate new rank score based on new start time
+        obs2.feasible()
+        obs2.evaluate_score()
 
     def move_observation(self, plan: Plan, index: int, new_index: int) -> Plan:
         """
@@ -281,7 +281,7 @@ class Scheduler:
             return plan
 
         # Create a deep copy of the plan
-        moved_plan = self.plan_deepcopy(plan)
+        moved_plan = self._plan_deepcopy(plan)
         obss = moved_plan.observations
 
         # Move the observation to the new index
@@ -305,9 +305,10 @@ class Scheduler:
         # Calculate new overheads for the transitions for following observations
         for idx in range(start_idx, len(obss) - 1):
             # Calculate new overhead
-            new_overhead = self.overheads.calculate_transition(obss[idx], obss[idx + 1])
-            # Update start time of next observation
-            obss[idx + 1].update_start_and_score(obss[idx].end_time + new_overhead)
+            # new_overhead = self.overheads.calculate_transition(obss[idx], obss[idx + 1])
+            # # Update start time of next observation
+            # obss[idx + 1].update_start_and_score(obss[idx].end_time + new_overhead)
+            self.transition(obss[idx], obss[idx + 1])
             if obss[idx + 1].score == 0.0:
                 # Observation becomes infeasible, abort and return the original plan
                 return plan
@@ -350,7 +351,7 @@ class Scheduler:
             return plan
 
         # Create copy of the plan to not modify the original one
-        plan_copy = self.plan_deepcopy(plan)
+        plan_copy = self._plan_deepcopy(plan)
 
         # Swap the observations
         obss = plan_copy.observations
@@ -382,31 +383,143 @@ class Scheduler:
 
         return plan_copy
 
+    def _get_best(self, plans, metric, comparison_plan):
+        """
+        Get the best plan from a list of plans based on a given metric and comparison plan.
+
+        Parameters
+        ----------
+        plan : Plan
+            The plan to check
+        metric : str
+            The metric to use for comparison
+        comparison_plan : Plan
+            The plan to compare the other plans to
+
+        Returns
+        -------
+        bool
+            True if the plan is better, False otherwise
+        """
+        if metric == "overheads":
+            overheads = [plan.overhead_time for plan in plans]
+            best_plan = plans[np.argmin(overheads)]
+            if best_plan.overhead_time < comparison_plan.overhead_time:
+                return best_plan
+        elif metric == "score":
+            scores = [plan.score for plan in plans]
+            best_plan = plans[np.argmax(scores)]
+            if best_plan.score > comparison_plan.score:
+                return best_plan
+        else:
+            raise ValueError("Invalid metric. Use 'overheads' or 'score'.")
+
+        return comparison_plan
+
+    def _get_metric(self, plan, metric):
+        """
+        Get the metric of a plan based on the given metric.
+
+        Parameters
+        ----------
+        plan : Plan
+            The plan to get the metric from
+        metric : str
+            The metric to get
+
+        Returns
+        -------
+        float
+            The value of the metric
+        """
+        if metric == "overheads":
+            return plan.overhead_time
+        elif metric == "score":
+            return plan.score
+        else:
+            raise ValueError("Invalid metric. Use 'overheads' or 'score'.")
+
     def lsh_optimization(
-        self, plan: Plan, method: str, iterations: int = None, verbose: bool = False
+        self,
+        plan: Plan,
+        method: str,
+        metric: str,
+        iterations: int = None,
+        verbose: bool = False,
     ) -> Plan:
         """
-        Optimize the plan using the LSH (Local Search Heuristic) algorithm. This means it moves an
-        observation to any
-        other spot in the plan and checks if the overhead time is reduced. It moves it to the spot
-        with the lowest overhead time.
+        Optimize the plan using the LSH (Local Search Heuristic) algorithm. The algorithm works by
+        going through all possible swaps or moves of observations and checking if the chosen metric
+        is improved and takes the best one. If it is, the swap or move is accepted, otherwise it is
+        rejected. The process is repeated for a number of iterations or until the metric doesn't
+        improve. The algorithm can be used to optimize the plan based on the overhead time or the
+        score of the plan. The method can be either "swap" or "move". Swap swaps two observations
+        in the plan, while move moves an observation to a new spot in the plan.
 
         Parameters
         ----------
         plan : Plan
             The plan to optimize
+        method : str
+            The method to use for the optimization. Can be either "swap" or "move".
+        metric : str
+            The metric to use for the optimization. Can be either "overheads" or "score".
+        iterations : int, optional
+            The number of iterations to run the optimization for. If None, it runs until the score
+            doesn't improve, by default None
+        verbose : bool, optional
+            If True, print the progress of the optimization, by default False
 
         Returns
         -------
         Plan
             The optimized plan
         """
+        # Check that the method is either "swap" or "move" and assign the corresponding function
         if method not in ["swap", "move"]:
             raise ValueError("Method must be either 'swap' or 'move'.")
+        if method == "move":
+            operation_func = self.move_observation
+        elif method == "swap":
+            operation_func = self.swap_observations
+
+        # Check that the metric is either "overheads" or "score"
+        if metric not in ["overheads", "score"]:
+            raise ValueError("Metric must be either 'overheads' or 'score'.")
+
         # Initialize the best plan to the original plan
-        best_plan = self.plan_deepcopy(plan)
+        best_plan = self._plan_deepcopy(plan)
+        if metric == "score":
+            # Remove Culmination efficiency merit, and add the airmass efficiency merit
+            for obs in best_plan.observations:
+                # Check if the culmination_efficiency merit is present
+                for merit in obs.target.efficiency_merits:
+                    if "culmination" in merit.func.__name__.lower():
+                        # Remove the culmination efficiency merit
+                        obs.target.efficiency_merits.remove(merit)
+                # Add the airmass efficiency merit
+                obs.target.add_merit(
+                    Merit(
+                        "AirmassEfficiency",
+                        airmass_efficiency,
+                        merit_type="efficiency",
+                    )
+                )
+                # Update scores with the new merit
+                obs.feasible()
+                obs.evaluate_score()
+            # Evaluate the plan to recalculate score with new merits
+            best_plan.evaluate_plan()
+
         if verbose:
-            print(f"Initial plan overhead time: {best_plan.overhead_time}")
+            if metric == "overheads":
+                print(f"Initial plan overhead time: {plan.overhead_time}")
+            elif metric == "score":
+                # Save initial scores and airmasses because of the change of merits
+                intial_score = best_plan.score
+                intial_avg_amass = best_plan.avg_airmass
+                print(f"Initial plan score: {intial_score:.4f}")
+                print(f"Initial avg airmass: {intial_avg_amass:.4f}")
 
         improved = True
         iteration_count = 0
@@ -418,26 +531,20 @@ class Scheduler:
         # Make the forward and backward passes until the score doesn't improve
         while improved and (iterations is None or iteration_count < iterations):
             improved = False
-            current_plan = self.plan_deepcopy(best_plan)
+            current_plan = self._plan_deepcopy(best_plan)
             # The indices of the observations to visit (variable U in the algorithm)
             pos_to_visit = list(range(len(plan.observations)))
+            np.random.shuffle(pos_to_visit)  # Shuffles in-place
             move_count = 0
-            while len(pos_to_visit) > 0:
-                # Select a random position to visit and remove it from the list
-                pos = pos_to_visit.pop(np.random.randint(0, len(pos_to_visit)))
+            for pos in pos_to_visit:
                 # Go through all posible swaps and keep track of the overhead times
                 plans = []
-                overheads = []
-                indexes = []
                 for i in range(len(plan.observations)):
                     if i == pos:
                         # Skip the unnecesary swap with itself
                         continue
-                    # Swap the observations
-                    if method == "swap":
-                        new_plan = self.swap_observations(best_plan, pos, i)
-                    elif method == "move":
-                        new_plan = self.move_observation(best_plan, pos, i)
+                    # Make the operation on the observation at pos
+                    new_plan = operation_func(best_plan, pos, i)
 
                     if new_plan == best_plan:
                         # If the new plan is the same as the original plan, continue
@@ -445,41 +552,59 @@ class Scheduler:
                         continue
                     # Save the overhead time
                     plans.append(new_plan)
-                    overheads.append(new_plan.overhead_time)
-                    indexes.append(i)
 
                 # Find the plan with the lowest overhead time
                 # Check that overheads is not empty
-                if len(overheads) == 0:
+                if len(plans) == 0:
                     # If overheads is empty, there was no feasible swap, continue
                     continue
                 else:
-                    idx_best_plan = np.argmin(overheads)
-                    tmp_best_plan = plans[idx_best_plan]
+                    tmp_best_plan = self._get_best(plans, metric, best_plan)
                     # TODO idea: only accept the change if the time gain is "worth it"
                     # Where worth it has to be defined where we can look at the general score and if
                     # the score drop is too high to justify the time gain then the switch is not
                     # accepted. Or something like that...
 
-                    if tmp_best_plan.overhead_time < best_plan.overhead_time:
-                        # If the new plan has a lower overhead time, accept the change
+                    if tmp_best_plan != best_plan:
+                        # If the new plan is different from the original plan, accept the change
                         best_plan = tmp_best_plan
                         move_count += 1
+                        improved = True
 
+            # Update the iteration count
             iteration_count += 1
-            if best_plan.overhead_time < current_plan.overhead_time:
-                improved = True
 
             if verbose:
-                delta_t = current_plan.overhead_time - best_plan.overhead_time
-                print(f"\n----- Iteration {iteration_count} -----")
-                print(f"Overhead time: {best_plan.overhead_time}")
-                print(f"Time saved with {move_count} changes: {delta_t}\n")
+                if metric == "overheads":
+                    delta_t = current_plan.overhead_time - best_plan.overhead_time
+                    print(f"\n----- Iteration {iteration_count} -----")
+                    print(f"Overhead time: {best_plan.overhead_time}")
+                    print(f"Time saved with {move_count} changes: {delta_t}\n")
+                elif metric == "score":
+                    delta_score = current_plan.score - best_plan.score
+                    print(f"\n----- Iteration {iteration_count} -----")
+                    print(f"Score: {best_plan.score:.4f}")
+                    print(
+                        f"Score improvement with {move_count} changes: {delta_score:.4f}\n"
+                    )
 
         if verbose:
             print("Optimization finished.")
-            print(f"Optimized plan overhead time: {best_plan.overhead_time}")
-            print("Total time saved: ", plan.overhead_time - best_plan.overhead_time)
+            if metric == "overheads":
+                print(f"Optimized plan overhead time: {best_plan.overhead_time}")
+                print(
+                    "Total time saved: ", plan.overhead_time - best_plan.overhead_time
+                )
+            elif metric == "score":
+                score_delta = intial_score - best_plan.score
+                avg_amass_delta = intial_avg_amass - best_plan.avg_airmass
+                print(
+                    f"Optimized plan score: {best_plan.score:.4f} ({score_delta:+.4f})"
+                )
+                print(
+                    f"Optimized plan avg airmass: {best_plan.avg_airmass:.4f} ({avg_amass_delta:+.4f})"
+                )
+
         return best_plan
 
     def optimize_plan(self, plan: Plan, iterations: int = None) -> Plan:
@@ -507,7 +632,7 @@ class Scheduler:
 
         # Create a deep copy of the plan
         plan_copy = Plan()
-        obs_copy = self.obslist_deepcopy(plan.observations)
+        obs_copy = self._obslist_deepcopy(plan.observations)
         for obs in obs_copy:
             plan_copy.add_observation(obs)
 
@@ -681,13 +806,13 @@ class generateQ(Scheduler):
         """
         print("Creating the Plan...")
         # Check max_plan_length
-        max_plan_length = self.check_max_plan_length(max_plan_length)
+        max_plan_length = self._check_max_plan_length(max_plan_length)
 
         # Create an empty plan to store the final results
         final_plan = Plan()
 
         # Create a deep copy of the available observations
-        remaining_obs = self.obslist_deepcopy(self.obs_list)
+        remaining_obs = self._obslist_deepcopy(self.obs_list)
         # Iterate until the plan is full or remaining_obs is empty
         while remaining_obs and (len(final_plan) < max_plan_length):
             # Score each observation to sort them and pick the top K
@@ -709,7 +834,7 @@ class generateQ(Scheduler):
 
             for obs in top_k_observations:
                 # Create a deep copy of available_obs
-                remaining_obs_copy = self.obslist_deepcopy(remaining_obs)
+                remaining_obs_copy = self._obslist_deepcopy(remaining_obs)
                 # Remove current obs from the copy
                 remaining_obs_copy.remove(obs)
 
@@ -770,13 +895,13 @@ class generateQ(Scheduler):
         """
         print("Creating the Plan...")
         # Check max_plan_length
-        max_plan_length = self.check_max_plan_length(max_plan_length)
+        max_plan_length = self._check_max_plan_length(max_plan_length)
 
         # Create an empty plan to store the final results
         final_plan = Plan()
 
         # Create a deep copy of the available observations
-        remaining_obs = self.obslist_deepcopy(self.obs_list)
+        remaining_obs = self._obslist_deepcopy(self.obs_list)
         # Iterate until the plan is full or remaining_obs is empty
         while remaining_obs and (len(final_plan) < max_plan_length):
             # Score each observation to sort them and pick the top K
@@ -798,7 +923,7 @@ class generateQ(Scheduler):
 
             for obs in top_k_observations:
                 # Create a deep copy of available_obs
-                remaining_obs_copy = self.obslist_deepcopy(remaining_obs)
+                remaining_obs_copy = self._obslist_deepcopy(remaining_obs)
                 # Remove current obs from the copy
                 remaining_obs_copy.remove(obs)
 
@@ -822,11 +947,16 @@ class generateQ(Scheduler):
                 # Add the best observation to the final plan
                 final_plan.add_observation(best_observation)
                 # Optimize the overheads of the plan
-                final_plan = self.lsh_optimization(final_plan, method="move")
+                final_plan = self.lsh_optimization(
+                    final_plan, method="move", metric="overheads"
+                )
                 # Remove the best observation from the available observations list
                 remaining_obs.remove(best_observation)
                 # self.update_start_from_prev(remaining_obs, best_observation)
                 self.update_start_from_prev(remaining_obs, final_plan.observations[-1])
+
+        # Perform a final score optimization
+        final_plan = self.lsh_optimization(final_plan, method="move", metric="score")
 
         # Evaluate the final plan
         final_plan.evaluate_plan()
@@ -904,7 +1034,7 @@ class DPPlanner(Scheduler):
             new_plan = deepcopy(current_plan)
 
             # Create a copy of the remaining observations
-            remaining_copy = self.obslist_deepcopy(remaining_observations)
+            remaining_copy = self._obslist_deepcopy(remaining_observations)
             # Remove the observation
             remaining_copy.remove(obs)
 
@@ -941,7 +1071,7 @@ class DPPlanner(Scheduler):
         K: int = 5,
     ) -> Plan:
         # Check max_plan_length
-        max_plan_length = self.check_max_plan_length(max_plan_length)
+        max_plan_length = self._check_max_plan_length(max_plan_length)
 
         for obs in self.obs_list:
             obs.feasible()
@@ -972,7 +1102,7 @@ class BeamSearchPlanner(Scheduler):
         K: int = 5,
     ) -> Plan:
         # Check max_plan_length
-        max_plan_length = self.check_max_plan_length(max_plan_length)
+        max_plan_length = self._check_max_plan_length(max_plan_length)
 
         # Initialize two priority queues
         PQ_current: PriorityQueue = PriorityQueue()
@@ -1015,7 +1145,7 @@ class BeamSearchPlanner(Scheduler):
                 new_plan.observations = current_plan.observations[:]
                 new_plan.add_observation(obs)
                 # Copy of remaining obs
-                new_remaining = self.obslist_deepcopy(remaining_observations)
+                new_remaining = self._obslist_deepcopy(remaining_observations)
                 new_remaining.remove(obs)
 
                 self.update_start_from_prev(new_remaining, obs)
