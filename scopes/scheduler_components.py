@@ -1403,7 +1403,7 @@ class Plan:
                     np.radians(obs.obs_azimuths[0]),
                     obs.obs_altitudes[0],
                     "go",
-                    label="Start of the night",
+                    label="Start of the plan",
                 )
             elif i == len(self.observations) - 1:
                 # Plot a red point at the end of the night
@@ -1411,7 +1411,7 @@ class Plan:
                     np.radians(obs.obs_azimuths[-1]),
                     obs.obs_altitudes[-1],
                     "ro",
-                    label="End of the night",
+                    label="End of the plan",
                 )
 
             # Connect the last point of the current observation with the first point of the next observation
@@ -1552,7 +1552,9 @@ class Plan:
 
         # Set the labels and titles
         ax1.set_ylabel("Azimuth Angle [deg]")
+        ax1.set_ylim(0, 360)
         ax2.set_ylabel("Elevation Angle [deg]")
+        ax2.set_ylim(30, 90)
         ax2.set_xlabel("Observation Time [JD]")
 
         # Set titles and layout
