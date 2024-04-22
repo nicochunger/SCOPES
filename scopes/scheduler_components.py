@@ -192,7 +192,7 @@ class Night:
 class Program:
     def __init__(
         self,
-        progID: Union[int, str],
+        progID: str,
         instrument: str,
         priority: int = None,
         time_share_allocated: float = 0.0,
@@ -222,7 +222,11 @@ class Program:
             The color to use when plotting an observation of this program. Must be a valid hex code.
             By default the colors will be chosen from the 'Set2' color pallette from matplotlib.
         """
+        if not isinstance(progID, str):
+            raise TypeError("progID must be a string")
         self.progID = progID
+        if not isinstance(instrument, str):
+            raise TypeError("instrument must be a string")
         self.instrument = instrument
         # Check that priority value is valid
         if priority < 0 or priority > 3:
@@ -732,7 +736,9 @@ class Overheads:
     observation position to another.
     """
 
-    def __init__(self, slew_rate_az, slew_rate_alt):
+    def __init__(
+        self, slew_rate_az: float, slew_rate_alt: float, cable_wrap_angle: float = None
+    ):
         """
         Initialize a new instance of the Overheads class. The slew rates are given in degrees per
         second.
@@ -744,12 +750,20 @@ class Overheads:
         slew_rate_alt : float
             The altitude slew rate in degrees per second.
         """
+        # Validate that slew rates are positive
+        if slew_rate_az <= 0 or slew_rate_alt <= 0:
+            raise ValueError("Slew rates must be positive")
+        # Validate that cable wrap angle is between 0 and 360 degrees
+        if cable_wrap_angle is not None:
+            if not (0 <= cable_wrap_angle <= 360):
+                raise ValueError("Cable wrap angle must be between 0 and 360 degrees")
+
         self.slew_rate_az = slew_rate_az
         self.slew_rate_alt = slew_rate_alt
+        self.cable_wrap_angle = cable_wrap_angle
         self.overheads = []
-        self.overhead_times = {}
 
-    def validate_function_params(self, func):
+    def _validate_function_params(self, func):
         params = inspect.signature(func).parameters
         param_names = list(params.keys())
         expected_names = ["observation1", "observation2"]
@@ -760,9 +774,48 @@ class Overheads:
         else:
             return False
 
+    def _is_angle_between(
+        self, start_angle: float, end_angle: float, check_angle: float
+    ) -> bool:
+        """
+        Check if an angle is between two other angles.
+
+        Parameters
+        ----------
+        start_angle : float
+            The start angle in degrees.
+        end_angle : float
+            The end angle in degrees.
+        check_angle : float
+            The angle to check if it is between the start and end angles.
+
+        Returns
+        -------
+        bool
+            True if the check angle is between the start and end angles, False otherwise.
+        """
+        # Normalize angles to ensure they are between 0 and 360 degrees
+        start_angle %= 360
+        end_angle %= 360
+        check_angle %= 360
+
+        # Find the normalized positions of end and check angles relative to the start angle
+        end_relative = (end_angle - start_angle) % 360
+        check_relative = (check_angle - start_angle) % 360
+
+        # Check if the check_angle is between start_angle and end_angle on the shortest path
+        return (
+            check_relative <= end_relative
+            if end_relative <= 180
+            else check_relative >= end_relative
+            or check_relative <= (end_relative - 360)
+        )
+
     def add_overhead(self, overhead_func, can_overlap_with_slew: bool = False):
         """
         Add an overhead function to the list of overheads.
+
+        The function must have exactly two parameters named 'observation1' and 'observation2'.
 
         Parameters
         ----------
@@ -773,7 +826,7 @@ class Overheads:
         if not inspect.isfunction(overhead_func):
             raise TypeError("overhead_func must be a function")
         # Check that the function has the correct parameters
-        if not self.validate_function_params(overhead_func):
+        if not self._validate_function_params(overhead_func):
             raise ValueError(
                 "Function must have exactly two parameters named 'observation1' and 'observation2'"
             )
@@ -783,7 +836,7 @@ class Overheads:
 
     def calculate_slew_time(self, obs1: Observation, obs2: Observation):
         """
-        Calculate the slew time between two observations.
+        Calculate the slew time between two observations, taking into account cable wrap.
 
         Parameters
         ----------
@@ -791,6 +844,8 @@ class Overheads:
             The first observation.
         obs2 : Observation
             The second observation.
+        cable_wrap_angle : float
+            The azimuth angle where the cable wrap limit is at, in degrees.
 
         Returns
         -------
@@ -812,15 +867,20 @@ class Overheads:
         if abs_sep_az > 180:
             abs_sep_az = 360 - abs_sep_az
 
+        # Check if cable wrap is between the two azimuths when taking the shortest path
+        if self.cable_wrap_angle is not None:
+            if self._is_angle_between(obs1_az, obs2_az, self.cable_wrap_angle):
+                # If cable wrap is between the two azimuths, azimuth slew has to go through long way
+                abs_sep_az = 360 - abs_sep_az
+
         slew_time_az = abs_sep_az / self.slew_rate_az
         slew_time_alt = abs_sep_alt / self.slew_rate_alt
-        # As Az and Alt rotation happens simultaneously, total slew time will be
-        # the largest of the two
-        # TODO consider if alt slew time is necesarry as most of the time it will be dominated by
-        # azimuth slew time (commonly larger separation than altitude)
-        slew_time = np.max([slew_time_az, slew_time_alt])
-        slew_time /= 86400  # Convert to days
+        # As Az and Alt slew happens simultaneously, total slew time will be the largest of the two
+        slew_time = max([slew_time_az, slew_time_alt]) / 86400  # Convert to days
         return slew_time
+
+    def __str__(self) -> str:
+        return f"Overheads(\n\tslew_rate_az={self.slew_rate_az}, \n\tslew_rate_alt={self.slew_rate_alt}, \n\tcable_wrap_limit={self.cable_wrap_angle})"
 
     def calculate_transition(self, observation1, observation2):
         """
@@ -835,17 +895,22 @@ class Overheads:
         """
         # Calculate slew time based on RA and DEC differences and slew rates
         slew_time = self.calculate_slew_time(observation1, observation2)
-        self.overhead_times["slew_time"] = slew_time
+
+        total_overhead = slew_time
+        extra_overhead_time = 0.0
 
         # Calculate other overheads
         for overhead_func, can_overlap_with_slew in self.overheads:
-            overhead_time = overhead_func(observation1, observation2)
-            overhead_time /= 86400  # Convert to days
-            self.overhead_times[overhead_func.__name__] = overhead_time
+            overhead_time = (
+                overhead_func(observation1, observation2) / 86400
+            )  # Convert to days
+
             if can_overlap_with_slew:
-                total_overhead = np.max([slew_time, overhead_time])
+                total_overhead = np.max([total_overhead, overhead_time])
             else:
-                total_overhead = slew_time + overhead_time
+                extra_overhead_time += overhead_time
+
+        total_overhead += extra_overhead_time
 
         return total_overhead
 
@@ -1488,6 +1553,9 @@ class Plan:
             # Create arrays of JD for each observation point
             jd_times = np.linspace(obs.start_time, obs.end_time, len(obs.obs_azimuths))
 
+            # TODO if a line crosses the 0/360 deg boundary create a split right at the boundary
+            # and plot the two parts separately. This is so that the line is not drawn across the
+            # entire plot when switching sides.
             # Plot azimuths and altitudes
             ax1.plot(jd_times, obs.obs_azimuths, "-", lw=1, c="k")
             ax2.plot(jd_times, obs.obs_altitudes, "-", lw=1, c="k")
