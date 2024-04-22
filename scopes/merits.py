@@ -7,7 +7,7 @@ from .scheduler_components import Observation
 
 
 def time_share(
-    observation: Observation, alpha: int = 3, beta: float = 5.0, delta: float = 0.1
+    observation: Observation, alpha: int = 3, beta: float = 5.0, delta: float = 0.05
 ) -> float:
     """
     Time share fairness merit. It uses a modified sigmoid function to calculate the merit.
