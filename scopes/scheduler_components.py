@@ -4,7 +4,7 @@ import re
 import uuid
 import warnings
 from datetime import date, datetime, time, timedelta
-from typing import Any, Callable, Dict, List, Union
+from typing import Any, Callable, Dict, List
 
 import astropy.units as u
 import matplotlib.colors as mcolors

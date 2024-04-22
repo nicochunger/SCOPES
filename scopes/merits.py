@@ -1,7 +1,7 @@
 """Definition of all the generic merit functions"""
 
 import numpy as np
-from astropy.time import Time
+# from astropy.time import Time
 
 from .scheduler_components import Observation
 
