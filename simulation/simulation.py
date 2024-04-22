@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import List
 from uuid import uuid4
@@ -7,29 +7,39 @@ import astropy.units as u
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-from astroplan import AirmassConstraint, is_observable
+from astroplan import AirmassConstraint, Observer, is_observable
 from astropy.coordinates import SkyCoord
 from astropy.time import Time
 from tqdm.auto import tqdm
 
 import scopes.merits as merits
-from scopes.scheduler_components import Merit, Night, Observation, Plan, Target
+from scopes.scheduler import Scheduler
+from scopes.scheduler_components import (
+    Merit,
+    Night,
+    Observation,
+    Overheads,
+    Plan,
+    Target,
+)
 
 
 class Simulation:
     def __init__(
         self,
-        start_date,
-        end_date,
-        observer,
-        night_within,
-        scheduler_algorithm,
-        keep_top_n=50,
+        start_date: date,
+        end_date: date,
+        observer: Observer,
+        night_within: str,
+        overheads: Overheads,
+        scheduler_algorithm: Scheduler,
+        keep_top_n: int = 50,
     ):
         self.start_date = start_date
         self.end_date = end_date
         self.observer = observer
         self.night_within = night_within
+        self.overheads = overheads
         self.unique_id = uuid4()
         self.scheduler = scheduler_algorithm
         self.keep_top_n = keep_top_n
@@ -44,13 +54,22 @@ class Simulation:
         # Define default merits
         self.default_merits = [
             Merit(
-                "Airmass", merits.airmass, merit_type="veto", parameters={"max": 1.8}
+                "Airmass", merits.airmass, merit_type="veto", parameters={"limit": 1.8}
             ),
-            Merit("Altitude", merits.altitude, merit_type="veto"),
+            Merit(
+                "Altitude",
+                merits.altitude,
+                merit_type="veto",
+                parameters={"min": 30, "max": 87},
+            ),
             Merit("AtNight", merits.at_night, merit_type="veto"),
-            # Merit("Culmination", merits.culmination, merit_type="efficiency"),
-            Merit("CulMapping", merits.culmination_mapping, merit_type="efficiency"),
-            Merit("TimeShare", merits.time_share, merit_type="fairness"),
+            Merit("CulMapping", merits.culmination_efficiency, merit_type="efficiency"),
+            Merit(
+                "TimeShare",
+                merits.time_share,
+                merit_type="fairness",
+                parameters={"beta": 7, "delta": 0.05},
+            ),
         ]
 
         # Build the night objects
@@ -98,7 +117,7 @@ class Simulation:
             # Airmass merit
             if "airmass" in tar.index:
                 # If the target has a custom airmass limit, update the airmass merit
-                merit_list[0].parameters["max"] = tar["airmass"]
+                merit_list[0].parameters["limit"] = tar["airmass"]
 
             # Determine the chosen merits for the target
             if "period" in tar.index:
@@ -251,28 +270,32 @@ class Simulation:
             targets += obs_targets
         return targets
 
-    def build_observations(
-        self, targets: List[Target], night: Night
-    ) -> List[Observation]:
+    def build_observations(self, targets: List[Target]) -> List[Observation]:
         """
         Builds a list of observations for a given list of targets, exposure time, and file name.
         """
         # print("Building observations...")
-        observations = [
-            Observation(target, night.obs_within_limits[0], target.exposure_time, night)
-            for target in targets
-        ]
+        observations = []
+        for target in targets:
+            # print(target.name)
+            # print(self.programs[target.program]["df"])
+            exp_time = (
+                self.programs[target.program]["df"]
+                .query("catalog_name == @target.name")
+                .iloc[0]["texp"]
+            )
+            observations.append(Observation(target, exp_time))
         return observations
 
-    def build_plan(self, observations: List[Observation]) -> Plan:
+    def build_plan(self, observations: List[Observation], night: Night) -> Plan:
         """
         Builds a plan from a list of observations.
         """
         # print("Building plan...")
-        scheduler_instance = self.scheduler(observations[0].night.obs_within_limits[0])
+        scheduler_instance = self.scheduler(night, observations, self.overheads)
 
         # Create the plan
-        plan = scheduler_instance.run(observations, max_plan_length=None, K=1)
+        plan = scheduler_instance.run2(K=5)
         return plan
 
     def update_tracking_tables(self, plan: Plan):
@@ -334,7 +357,7 @@ class Simulation:
 
             new_night_history[f"{self.prog_names[i]}_used"] = [prog_time_used]
             # Update the program's time share
-            prog.update_time_share(prog_time_used)
+            prog.set_current_time_usage(prog_time_used)
 
         if self.night_history.empty:
             # After the first night, the night history will still be empty
@@ -402,6 +425,28 @@ class Simulation:
         else:
             plt.close()
 
+    def simulation_parameters(self):
+        """
+        Prints the simulation parameters.
+        """
+        lines = []
+        lines.append(f"Simulation ID: {self.unique_id}")
+        lines.append(f"Start Date: {self.start_date}")
+        lines.append(f"End Date: {self.end_date}")
+        lines.append(f"Observer: {self.observer}")
+        lines.append(f"Night Within: {self.night_within}")
+        lines.append(f"Overheads: {self.overheads}")
+        lines.append(f"Scheduler: {self.scheduler}")
+        lines.append(f"Keep Top N: {self.keep_top_n}")
+        lines.append(f"Total number of observations: {len(self.observation_history)}")
+        lines.append(
+            f'Total observation time: {self.night_history["observation_time"].sum()}'
+        )
+        lines.append(
+            f'Total overhead time: {self.night_history["overhead_time"].sum()}'
+        )
+        return "\n".join(lines)
+
     def post_simulation_diagnostic(self, display=False):
         """
         Plots the time share of each program over the course of the simulation.
@@ -447,19 +492,25 @@ class Simulation:
         else:
             plt.close()
 
+        # Print the simulation parameters to a file
+        print(
+            self.simulation_parameters(),
+            file=open(f"{self.save_folder}/summary.txt", "w"),
+        )
+
         # TODO Calculate how well it followed the cadence constraints
 
     def run(self):
         """
         Runs the simulation.
         """
-        # Build the nights
-        # self.build_nights()
 
+        # Check if programs have been added
         if self.programs == {}:
             print("No programs have been added to the simulation.")
             return
 
+        # Get the program names
         self.prog_names = [f"{prog.progID}{prog.instrument}" for prog in self.programs]
 
         # Initialize the tracking tables for the observations and nights
@@ -486,10 +537,10 @@ class Simulation:
             self.observable_targets = self.determine_observability(night)
 
             # Build the list of observations
-            self.observations = self.build_observations(self.observable_targets, night)
+            self.observations = self.build_observations(self.observable_targets)
 
             # Build the plan
-            plan = self.build_plan(self.observations)
+            plan = self.build_plan(self.observations, night)
 
             self.plans.append(plan)
 
@@ -503,8 +554,15 @@ class Simulation:
             )
             plan.plot(
                 display=False,
-                save=True,
                 path=f"{self.save_folder}/night_plots/plot_{night.night_date}.png",
+            )
+            plan.plot_polar(
+                display=False,
+                path=f"{self.save_folder}/night_plots/polar_{night.night_date}.png",
+            )
+            plan.plot_altaz(
+                display=False,
+                path=f"{self.save_folder}/night_plots/altaz_{night.night_date}.png",
             )
             self.plot_time_share()
 
