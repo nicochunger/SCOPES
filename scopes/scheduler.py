@@ -97,7 +97,7 @@ class Scheduler:
         self.obs_list = obs_list
         self.overheads = overheads
         # Set the start of all obs
-        for obs in tqdm(self.obs_list):
+        for obs in tqdm(self.obs_list, desc="Setting up observations"):
             if custom_end_time:
                 obs.target.add_merit(
                     Merit("EndTime", end_time, "veto", {"time": self.plan_end_time})
@@ -869,16 +869,22 @@ class generateQ(Scheduler):
 
     def run2(self, max_plan_length=None, K: int = 5):
         """
-        The way it works is by using
+        The run function for the generateQ Scheduler. The way it works is by using
         the forwardP function to generate a plan from the starting time to the end of the night
         but at each step it does this for the top K observations, and it chooses the observation
         that has the highest plan score at the end of the night. That would become the first
-        observation of the plan. Then for the second it repeats the same process. It takes the
-        top K observations runs forwardP until the end of the night, and assesses the plan score
-        (but of the entire night, including the observation that was added before). It then chooses
-        the observation that has the highest plan score at the end of the night, and that becomes
-        the second observation of the plan. It repeats this process until the plan is full or it
-        reaches the maximum plan length.
+        observation of the plan. After each step it performs a Local Search Heuristic optimization
+        that optimizes the order of the observation to minimize overheads.
+        Then for the second it repeats the same process. It takes the top K observations runs
+        forwardP until the end of the night, and assesses the plan score (but of the entire night,
+        including the observation that was added before). It then chooses the observation that has
+        the highest plan score at the end of the night, and that becomes the second observation of
+        the plan. It repeats this process until the plan is full or it reaches the maximum plan
+        length.
+
+        At the end a final LSH optimization is run to maximize the score of the overall plan. This
+        usually means reordering the observation to achieve a higher average airmass for the
+        observations.
 
         Parameters
         ----------

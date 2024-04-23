@@ -1,6 +1,9 @@
 0.x.x - TBA
 
 - Implemented a Local Search Heuristic that optimizes the overall overhead time of a plan.
+- The same for optimizing the score after the overheads are minimized.
+- In the Overheads object, the slew can now take into account cable wrap limits.
+- Simulation module was updated and works again
 
 0.2.0 - 07.03.2024
 
