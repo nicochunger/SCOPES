@@ -238,11 +238,6 @@ class Scheduler:
         total_overhead = self.overheads.calculate_transition(obs1, obs2)
         # Update the start time of obs2
         obs2.set_start_time(obs1.end_time + total_overhead)
-        # Recalculate the score of obs2
-        # if obs2.end_time > self.night.obs_within_limits[1]:
-        #     # Set score to 0 if observation goes beyond the end of the night
-        #     obs2.score = 0.0
-        # else:
         # Update the time array becaue the start time changed
         obs2.update_alt_airmass()
         # Calculate new rank score based on new start time
@@ -607,92 +602,92 @@ class Scheduler:
 
         return best_plan
 
-    def optimize_plan(self, plan: Plan, iterations: int = None) -> Plan:
-        """
-        Optimize the plan testing permutations of the observations to find a more optimal plan from
-        the observations in the given plan.
+    # def optimize_plan(self, plan: Plan, iterations: int = None) -> Plan:
+    #     """
+    #     Optimize the plan testing permutations of the observations to find a more optimal plan from
+    #     the observations in the given plan.
 
-        It works by going through the observations from left to right and swapping consecutive
-        observations to see if the score of the plan can be improved. If it does, it keeps the
-        swap, otherwise it reverts to the original plan. It then moves to the next pair of
-        observations and repeats the process until the end of the plan. It then repeats the
-        process in the reverse order. It does this for a number of iterations until the score of
-        the plan doesn't improve.
+    #     It works by going through the observations from left to right and swapping consecutive
+    #     observations to see if the score of the plan can be improved. If it does, it keeps the
+    #     swap, otherwise it reverts to the original plan. It then moves to the next pair of
+    #     observations and repeats the process until the end of the plan. It then repeats the
+    #     process in the reverse order. It does this for a number of iterations until the score of
+    #     the plan doesn't improve.
 
-        Parameters
-        ----------
-        plan : Plan
-            The plan to optimize
+    #     Parameters
+    #     ----------
+    #     plan : Plan
+    #         The plan to optimize
 
-        Returns
-        -------
-        Plan
-            The optimized plan
-        """
+    #     Returns
+    #     -------
+    #     Plan
+    #         The optimized plan
+    #     """
 
-        # Create a deep copy of the plan
-        plan_copy = Plan()
-        obs_copy = self._obslist_deepcopy(plan.observations)
-        for obs in obs_copy:
-            plan_copy.add_observation(obs)
+    #     # Create a deep copy of the plan
+    #     plan_copy = Plan()
+    #     obs_copy = self._obslist_deepcopy(plan.observations)
+    #     for obs in obs_copy:
+    #         plan_copy.add_observation(obs)
 
-        # Remove Culmination efficiency merit, and add the airmass efficiency merit
-        for obs in plan_copy.observations:
-            # Check if the culmination_efficiency merit is present
-            for merit in obs.target.efficiency_merits:
-                if "culmination" in merit.func.__name__.lower():
-                    # Remove the culmination efficiency merit
-                    obs.target.efficiency_merits.remove(merit)
-            # Add the airmass efficiency merit
-            obs.target.add_merit(
-                Merit(
-                    "AirmassEfficiency",
-                    airmass_efficiency,
-                    merit_type="efficiency",
-                )
-            )
-            # Update scores with the new merit
-            obs.feasible()
-            obs.evaluate_score()
+    #     # Remove Culmination efficiency merit, and add the airmass efficiency merit
+    #     for obs in plan_copy.observations:
+    #         # Check if the culmination_efficiency merit is present
+    #         for merit in obs.target.efficiency_merits:
+    #             if "culmination" in merit.func.__name__.lower():
+    #                 # Remove the culmination efficiency merit
+    #                 obs.target.efficiency_merits.remove(merit)
+    #         # Add the airmass efficiency merit
+    #         obs.target.add_merit(
+    #             Merit(
+    #                 "AirmassEfficiency",
+    #                 airmass_efficiency,
+    #                 merit_type="efficiency",
+    #             )
+    #         )
+    #         # Update scores with the new merit
+    #         obs.feasible()
+    #         obs.evaluate_score()
 
-        # Evaluate the plan and intialize variables
-        plan_copy.evaluate_plan()
-        current_score = plan_copy.score
-        print(f"Initial plan score: {current_score:.4f}")
-        improved = True
-        iteration_count = 0
+    #     # Evaluate the plan and intialize variables
+    #     plan_copy.evaluate_plan()
+    #     current_score = plan_copy.score
+    #     print(f"Initial plan score: {current_score:.4f}")
+    #     improved = True
+    #     iteration_count = 0
 
-        # Make the forward and backward passes until the score doesn't improve
-        while improved and (iterations is None or iteration_count < iterations):
-            improved = False
-            # Forward pass
-            for i in range(len(plan_copy.observations) - 1):
-                new_plan = self.swap_observations(plan_copy, i, i + 1)
-                new_plan.evaluate_plan()
-                new_score = new_plan.score
-                if new_score > current_score:
-                    plan_copy = new_plan
-                    current_score = new_score
-                    improved = True
+    #     # Make the forward and backward passes until the score doesn't improve
+    #     while improved and (iterations is None or iteration_count < iterations):
+    #         improved = False
+    #         # Forward pass
+    #         for i in range(len(plan_copy.observations) - 1):
+    #             new_plan = self.swap_observations(plan_copy, i, i + 1)
+    #             new_plan.evaluate_plan()
+    #             new_score = new_plan.score
+    #             if new_score > current_score:
+    #                 plan_copy = new_plan
+    #                 current_score = new_score
+    #                 improved = True
 
-            # Backward pass
-            for i in range(len(plan_copy.observations) - 1, 0, -1):
-                new_plan = self.swap_observations(plan_copy, i - 1, i)
-                new_plan.evaluate_plan()
-                new_score = new_plan.score
-                if new_score > current_score:
-                    plan_copy = new_plan
-                    current_score = new_score
-                    improved = True
+    #         # Backward pass
+    #         for i in range(len(plan_copy.observations) - 1, 0, -1):
+    #             new_plan = self.swap_observations(plan_copy, i - 1, i)
+    #             new_plan.evaluate_plan()
+    #             new_score = new_plan.score
+    #             if new_score > current_score:
+    #                 plan_copy = new_plan
+    #                 current_score = new_score
+    #                 improved = True
 
-            iteration_count += 1
-            if not improved:
-                break
-        print(
-            f"Optimized plan score: {current_score:.4f} (after {iteration_count} iterations)"
-        )
+    #         iteration_count += 1
+    #         if not improved:
+    #             break
+    #     print(
+    #         f"Optimized plan score: {current_score:.4f} (after {iteration_count} iterations)"
+    #     )
 
-        return plan_copy
+    #     return plan_copy
 
 
 ## ----- SPECIFIC SCHEDULERS ----- ##
@@ -778,96 +773,96 @@ class generateQ(Scheduler):
 
         return observation_plan
 
+    # def run(self, max_plan_length=None, K: int = 5):
+    #     """
+    #     The way it works is by using
+    #     the forwardP function to generate a plan from the starting time to the end of the night
+    #     but at each step it does this for the top K observations, and it chooses the observation
+    #     that has the highest plan score at the end of the night. That would become the first
+    #     observation of the plan. Then for the second it repeats the same process. It takes the
+    #     top K observations runs forwardP until the end of the night, and assesses the plan score
+    #     (but of the entire night, including the observation that was added before). It then chooses
+    #     the observation that has the highest plan score at the end of the night, and that becomes
+    #     the second observation of the plan. It repeats this process until the plan is full or it
+    #     reaches the maximum plan length.
+
+    #     Parameters
+    #     ----------
+    #     max_plan_length : int, optional
+    #         The maximum length of the plan, by default None meaning it will go until the end of
+    #         the night
+    #     K : int, optional
+    #         The number of top observations to consider at each step, by default 5
+
+    #     Returns
+    #     -------
+    #     Plan
+    #         The final plan
+    #     """
+    #     print("Creating the Plan...")
+    #     # Check max_plan_length
+    #     max_plan_length = self._check_max_plan_length(max_plan_length)
+
+    #     # Create an empty plan to store the final results
+    #     final_plan = Plan()
+
+    #     # Create a deep copy of the available observations
+    #     remaining_obs = self._obslist_deepcopy(self.obs_list)
+    #     # Iterate until the plan is full or remaining_obs is empty
+    #     while remaining_obs and (len(final_plan) < max_plan_length):
+    #         # Score each observation to sort them and pick the top K
+    #         obs_scores = []
+    #         for o in remaining_obs:
+    #             if o.feasible():
+    #                 score = o.evaluate_score()
+    #                 obs_scores.append((score, o))
+    #         if not obs_scores:
+    #             # No feasible observations remain
+    #             break
+    #         obs_scores.sort(reverse=True, key=lambda x: x[0])
+
+    #         top_k_observations = [obs for _, obs in obs_scores[:K]]
+
+    #         # Track the best observation and corresponding plan
+    #         best_observation = None
+    #         best_plan = None
+
+    #         for obs in top_k_observations:
+    #             # Create a deep copy of available_obs
+    #             remaining_obs_copy = self._obslist_deepcopy(remaining_obs)
+    #             # Remove current obs from the copy
+    #             remaining_obs_copy.remove(obs)
+
+    #             # Generate plan using forwardP with the modified list
+    #             plan = self.forwardP(
+    #                 obs,
+    #                 remaining_obs_copy,
+    #                 lookahead_distance=max_plan_length - len(final_plan) - 1,
+    #             )
+
+    #             # If the current plan is better than the best, update best_plan and best_observation
+    #             if not best_plan or (plan.score > best_plan.score):
+    #                 best_plan = plan
+    #                 best_observation = obs
+
+    #         if K == 1:
+    #             # If K=1, the best plan is the one generated by forwardP
+    #             final_plan = best_plan
+    #             break
+    #         else:
+    #             # Add the best observation to the final plan
+    #             final_plan.add_observation(best_observation)
+    #             # Remove the best observation from the available observations list
+    #             remaining_obs.remove(best_observation)
+    #             self.update_start_from_prev(remaining_obs, best_observation)
+
+    #     # Evaluate the final plan
+    #     final_plan.evaluate_plan()
+    #     print("Done!")
+
+    #     return final_plan
+
     def run(self, max_plan_length=None, K: int = 5):
-        """
-        The way it works is by using
-        the forwardP function to generate a plan from the starting time to the end of the night
-        but at each step it does this for the top K observations, and it chooses the observation
-        that has the highest plan score at the end of the night. That would become the first
-        observation of the plan. Then for the second it repeats the same process. It takes the
-        top K observations runs forwardP until the end of the night, and assesses the plan score
-        (but of the entire night, including the observation that was added before). It then chooses
-        the observation that has the highest plan score at the end of the night, and that becomes
-        the second observation of the plan. It repeats this process until the plan is full or it
-        reaches the maximum plan length.
-
-        Parameters
-        ----------
-        max_plan_length : int, optional
-            The maximum length of the plan, by default None meaning it will go until the end of
-            the night
-        K : int, optional
-            The number of top observations to consider at each step, by default 5
-
-        Returns
-        -------
-        Plan
-            The final plan
-        """
-        print("Creating the Plan...")
-        # Check max_plan_length
-        max_plan_length = self._check_max_plan_length(max_plan_length)
-
-        # Create an empty plan to store the final results
-        final_plan = Plan()
-
-        # Create a deep copy of the available observations
-        remaining_obs = self._obslist_deepcopy(self.obs_list)
-        # Iterate until the plan is full or remaining_obs is empty
-        while remaining_obs and (len(final_plan) < max_plan_length):
-            # Score each observation to sort them and pick the top K
-            obs_scores = []
-            for o in remaining_obs:
-                if o.feasible():
-                    score = o.evaluate_score()
-                    obs_scores.append((score, o))
-            if not obs_scores:
-                # No feasible observations remain
-                break
-            obs_scores.sort(reverse=True, key=lambda x: x[0])
-
-            top_k_observations = [obs for _, obs in obs_scores[:K]]
-
-            # Track the best observation and corresponding plan
-            best_observation = None
-            best_plan = None
-
-            for obs in top_k_observations:
-                # Create a deep copy of available_obs
-                remaining_obs_copy = self._obslist_deepcopy(remaining_obs)
-                # Remove current obs from the copy
-                remaining_obs_copy.remove(obs)
-
-                # Generate plan using forwardP with the modified list
-                plan = self.forwardP(
-                    obs,
-                    remaining_obs_copy,
-                    lookahead_distance=max_plan_length - len(final_plan) - 1,
-                )
-
-                # If the current plan is better than the best, update best_plan and best_observation
-                if not best_plan or (plan.score > best_plan.score):
-                    best_plan = plan
-                    best_observation = obs
-
-            if K == 1:
-                # If K=1, the best plan is the one generated by forwardP
-                final_plan = best_plan
-                break
-            else:
-                # Add the best observation to the final plan
-                final_plan.add_observation(best_observation)
-                # Remove the best observation from the available observations list
-                remaining_obs.remove(best_observation)
-                self.update_start_from_prev(remaining_obs, best_observation)
-
-        # Evaluate the final plan
-        final_plan.evaluate_plan()
-        print("Done!")
-
-        return final_plan
-
-    def run2(self, max_plan_length=None, K: int = 5):
         """
         The run function for the generateQ Scheduler. The way it works is by using
         the forwardP function to generate a plan from the starting time to the end of the night
