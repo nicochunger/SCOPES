@@ -11,6 +11,7 @@ import matplotlib.colors as mcolors
 import matplotlib.dates as mdates
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
 import plotly.graph_objs as go
 import pytz
 from astroplan import Observer
@@ -1641,41 +1642,21 @@ class Plan:
         else:
             plt.close()
 
-    def print_plan(self, save: bool = False, path: str = None):
+    def to_df(self):
         """
-        Print the plan itself with each observation. This includes the target, the program, the
-        instrument, the coordinates, the start time of the observation, its exposure time, and
-        the comment for the observer (if any).
-
-        Parameters
-        ----------
-        save : bool, optional
-            If True, and path is not None, save the plan to a file. Defaults to False.
-        path : str, optional
-            The path to the file where the plan will be saved. Defaults to None. Ignored if save is
-            False.
-
-        Returns
-        -------
-        plan_txt : str
-            The night's plan as a human readable text when printed.
+        Create a pandas DataFrame of the plan and return it. It saves this table in an attribute
+        called 'df'.
         """
-        lines = []
-        lines.append(
-            f"Plan for the night of {self.observations[0].night.night_date} (Times in UTC)"
-        )
-        lines.append("--------------------------------------------------\n")
-        # Initialize variables for maximum column widths
-        max_prog_id_width = len("ProgID")
-        max_instrument_width = len("Instrument")
-        max_target_width = len("Target")
-        max_ra_width = len("RA")
-        max_dec_width = len("DEC")
-        max_start_time_width = len("Start Time")
-        max_exp_time_width = len("(Exp time)")
-        max_comment_width = len("Comment for the observer")
+        # List to hold the rows for the DataFrame
+        data = []
 
-        # Determine the maximum width of each column
+        def format_timedelta(tdelta):
+            """Format timedelta to display only hours, minutes, and seconds."""
+            total_seconds = int(tdelta.total_seconds())
+            hours, remainder = divmod(total_seconds, 3600)
+            minutes, seconds = divmod(remainder, 60)
+            return f"{hours:02}:{minutes:02}:{seconds:02}"
+
         for obs in self.observations:
             start_time = Time(obs.start_time, format="jd").datetime
             exp_time = timedelta(days=obs.exposure_time)
@@ -1686,80 +1667,52 @@ class Plan:
                 unit="deg", sep=":", precision=0, pad=True, alwayssign=True
             )
 
-            prog_id_width = len(obs.target.program.progID)
-            instrument_width = len(obs.target.program.instrument)
-            target_width = len(obs.target.name)
-            ra_width = len(ra_str)
-            dec_width = len(dec_str)
-            start_time_width = len(start_time.strftime("%H:%M:%S"))
-            exp_time_width = len(f"({exp_time})")
-            comment_width = len(obs.target.comment)
-
-            # Update max widths if current item is larger
-            max_prog_id_width = max(max_prog_id_width, prog_id_width)
-            max_instrument_width = max(max_instrument_width, instrument_width)
-            max_target_width = max(max_target_width, target_width)
-            max_ra_width = max(max_ra_width, ra_width)
-            max_dec_width = max(max_dec_width, dec_width)
-            max_start_time_width = max(max_start_time_width, start_time_width)
-            max_exp_time_width = max(max_exp_time_width, exp_time_width)
-            max_comment_width = max(max_comment_width, comment_width)
-
-        # Prepare header and lines list
-        lines = []
-        header_format = f"{{:<6}}{{:<{max_prog_id_width+2}}}{{:<{max_instrument_width+2}}}{{:<{max_target_width+2}}}{{:<{max_ra_width+2}}}{{:<{max_dec_width+2}}}{{:<{max_start_time_width+2}}}{{:<{max_exp_time_width+2}}}{{:<{max_comment_width+2}}}"
-        lines.append(
-            header_format.format(
-                "#",
-                "ProgID",
-                "Instrument",
-                "Target",
-                "RA",
-                "DEC",
-                "Start Time",
-                "(Exp Time)",
-                "Comment for the observer",
-            )
-        )
-
-        # Format each observation line with dynamic widths
-        for i, obs in enumerate(self.observations):
-            start_time = Time(obs.start_time, format="jd").datetime
-            exp_time = TimeDelta(obs.exposure_time * u.day).to_datetime()
-            ra_str = obs.target.coords.ra.to_string(
-                unit="hour", sep=":", precision=0, pad=True
-            )
-            dec_str = obs.target.coords.dec.to_string(
-                unit="deg", sep=":", precision=0, pad=True, alwayssign=True
+            # Add a dictionary for each observation
+            data.append(
+                {
+                    "Instrument": obs.target.program.instrument,
+                    "ProgID": obs.target.program.progID,
+                    "Target": obs.target.name,
+                    "RA": ra_str,
+                    "DEC": dec_str,
+                    "Start Time": start_time.strftime("%H:%M:%S"),
+                    "Exp Time": format_timedelta(exp_time),
+                    "Exp Time (s)": int(exp_time.total_seconds()),
+                    "Comment for the observer": obs.target.comment,
+                }
             )
 
-            line_format = f"{{:<6}}{{:<{max_prog_id_width+2}}}{{:<{max_instrument_width+2}}}{{:<{max_target_width+2}}}{{:<{max_ra_width+2}}}{{:<{max_dec_width+2}}}{{:<{max_start_time_width+2}}}{{:<{max_exp_time_width+2}}}{{:<{max_comment_width+2}}}"
-            line = line_format.format(
-                f"{i+1:>2}:",
-                obs.target.program.progID,
-                obs.target.program.instrument,
-                obs.target.name,
-                ra_str,
-                dec_str,
-                start_time.strftime("%H:%M:%S"),
-                f"({exp_time})",
-                obs.target.comment,
-            )
-            lines.append(line)
+        # Create the DataFrame from the list of dictionaries
+        columns = [
+            "Instrument",
+            "ProgID",
+            "Target",
+            "RA",
+            "DEC",
+            "Start Time",
+            "Exp Time",
+            "Exp Time (s)",
+            "Comment for the observer",
+        ]
+        self.df = pd.DataFrame(data, columns=columns)
 
-        # Join the lines into a single string
-        plan_txt = "\n".join(lines)
-        if save:
-            if path is None:
-                raise ValueError("Path must be specified if save is True")
-            else:
-                with open(path, "w") as f:
-                    f.write(plan_txt)
+        return self.df
 
-        return plan_txt
+    def to_csv(self, *args, **kwargs):
+        """
+        Create a CSV file for the pandas DataFrame representation of the Plan
+        This method can take any keyword argument that the pd.DataFrame.to_csv() method can take.
+        """
+        if not hasattr(self, "df"):
+            self.to_df()
+        self.df.to_csv(*args, **kwargs)
 
     def __len__(self):
         return len(self.observations)
 
+    def __repr__(self):
+        return f"<Plan> with {len(self)} observations"
+
     def __str__(self):
-        return self.print_plan(save=False)
+        return self.to_df().to_string()
+        # return self.print_plan(save=False)
