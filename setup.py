@@ -7,7 +7,7 @@ with open("README.md", encoding="utf-8") as f:
     long_description = f.read()
 
 # Read version directly from the package __init__.py file
-with open("mypackage/__init__.py", "r") as f:
+with open("scopes/__init__.py", "r") as f:
     version = re.search(r'^__version__ = [\'"]([^\'"]*)[\'"]', f.read(), re.M).group(1)
 
 setup(
