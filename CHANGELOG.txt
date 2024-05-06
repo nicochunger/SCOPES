@@ -1,9 +1,15 @@
-0.x.x - TBA
+0.3.0 - 06.05.2024
 
 - Implemented a Local Search Heuristic that optimizes the overall overhead time of a plan.
 - The same for optimizing the score after the overheads are minimized.
 - In the Overheads object, the slew can now take into account cable wrap limits.
 - Simulation module was updated and works again
+- Added a new phase_specific merit which is an improved version of the periodic gaussian merit.
+  In this merit the sigma is actually the standard deviation of the gaussian in phase space.
+- Added to_df() and to_csv() methods to Plan which create a pandas DataFrame of the Plan and saves
+  it to a CSV file, respectively.
+- Removed the print_plan() function and replaced it by printing the string representation of the 
+  dataframe created by to_df()
 
 0.2.0 - 07.03.2024
 
