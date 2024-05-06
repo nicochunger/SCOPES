@@ -1,12 +1,18 @@
+import re
+
 from setuptools import find_packages, setup
 
 # Read the contents of your README file
 with open("README.md", encoding="utf-8") as f:
     long_description = f.read()
 
+# Read version directly from the package __init__.py file
+with open("mypackage/__init__.py", "r") as f:
+    version = re.search(r'^__version__ = [\'"]([^\'"]*)[\'"]', f.read(), re.M).group(1)
+
 setup(
     name="scopes",
-    version="0.3.0",
+    version=version,
     author="Nicolas Unger",
     author_email="nicolas.unger@unige.ch",
     description="System for Coordinating Observational Planning and Efficient Scheduling",
