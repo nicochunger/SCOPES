@@ -1,8 +1,10 @@
 """Definition of all the generic merit functions"""
 
-import numpy as np
-# from astropy.time import Time
+import warnings
 
+import numpy as np
+
+# from astropy.time import Time
 from .scheduler_components import Observation
 
 
@@ -256,7 +258,7 @@ def moon_separation(
 def end_time(observation: Observation, time: float) -> float:
     """
     Veto merit function that returns 0 if the observation ends after the given time, and 1
-    otherwise. This is used when an end time is given for the schedule.
+    otherwise.
 
     Parameters
     ----------
@@ -266,6 +268,21 @@ def end_time(observation: Observation, time: float) -> float:
         The end time of the observation
     """
     return float(observation.end_time <= time)
+
+
+def start_time(observation: Observation, time: float) -> float:
+    """
+    Veto merit function that returns 0 if the observation starts before the given time, and 1
+    otherwise.
+
+    Parameters
+    ----------
+    observation : Observation
+        The Observation object to be used
+    time : float
+        The start time of the observation
+    """
+    return float(observation.start_time >= time)
 
 
 def culmination(observation: Observation, verbose: bool = False) -> float:
@@ -359,6 +376,9 @@ def periodic_gaussian(
     verbose: bool = False,
 ) -> float:
     """
+    # TODO Change this entire merit with the version I show in the documentation as its more stable
+    and the sigma actually makes physical sense.
+
     Periodic Gaussian merit function.
 
     Analytic expression: exp(-0.5(sin(2pi(x-epoch)/period)/s)^2)
@@ -397,6 +417,65 @@ def periodic_gaussian(
         print(f"current phase = {((observation.start_time - epoch) % period) / period}")
         print(f"{merit = }")
     return merit
+
+
+def phase_specific(
+    observation: Observation,
+    epoch: float,
+    period: float,
+    sigma: float,
+    phases: list = [0.0],
+) -> float:
+    """
+    This merit is used when the observation should be taken at specific phases of a periodic
+    time interval. In exoplanet detections, for example, this is used when observations have
+    to be taken at a specific phase of the orbit of a planet. Its analytic expression is a slight
+    modification of the merit presented by Granzer (2004):
+
+    $$ m(x, phi) = sum_{i=-1}^{1} exp(-x(t) - (phi - i) / 2 sigma)^2 $$
+    $$ x(t) = mod(t - t0, p) / p$$, for |x| <= 0.5
+
+    where t is time, p is the period, phi is the desired phase at which to observe, and sigma is the
+    standard deviation of the Gaussian in phase space. If more than one phase is given, the merit
+    will be the max of the merits for each phase:
+
+    $$ m = max_{phi} m(x, phi) $$
+
+    Parameters
+    ----------
+    observation : Observation
+        The Observation object to be used
+    epoch : float
+        The phase at which the merit will be centered
+    period : float
+        The period of the observation
+    phases : list, optional
+        List of phases at which the gaussians should peak. Defaults to [0.0].
+    """
+    # Value checks
+    if sigma <= 0:
+        raise ValueError("sigma for phase_specific merit must be greater than 0")
+    if sigma > 0.2:
+        raise warnings.warn(
+            "Care should be taken when sigma > 0.2, as the merit can end up being \
+                            significantly larger than 1."
+        )
+    if period <= 0:
+        raise ValueError("period for phase_specific merit must be greater than 0")
+    if np.any(np.array(phases) < 0) or np.any(np.array(phases) > 1):
+        raise ValueError("phases for phase_specific merit must be between 0 and 1")
+
+    # Calculate the merit for each phase
+    merits = []
+    for phase in phases:
+        x = np.mod(observation.start_time - epoch, period) / period
+        if abs(x - phase) <= 0.5:
+            merit = 0
+            for i in range(-1, 2):
+                merit += np.exp(-0.5 * (((x - (phase - i)) / (sigma)) ** 2))
+            merits.append(merit)
+
+    return max(merits)
 
 
 def time_critical(
