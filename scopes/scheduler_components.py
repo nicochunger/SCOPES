@@ -263,7 +263,10 @@ class Program:
         current_time_usage : float
             The current time share used by the program in percent of the total
         """
-        # Function that retrieves the current time used by the program
+        # Value check
+        if not (0 <= current_time_usage <= 1):
+            raise ValueError("current_time_usage must be between 0 and 1")
+        # Update the current time share and calculate the difference
         self.time_share_current = current_time_usage
         self.time_share_pct_diff = self.time_share_current - self.time_share_allocated
 
