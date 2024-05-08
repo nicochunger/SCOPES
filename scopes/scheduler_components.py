@@ -190,15 +190,63 @@ class Night:
         return "\n".join(lines)
 
 
+class Instrument:
+    def __init__(self, name: str, instrument_type: str = "", plot_color: str = None):
+        """
+        Initialize a new instance of the Instrument class.
+
+        Parameters
+        ----------
+        name : str
+            The name of the instrument.
+        instrument_type : str
+            The type of the instrument.
+        plot_color : str, optional
+            The color to use when plotting an observation of this instrument. Must be a valid hex
+            code. By default the colors will be chosen from the 'Set2' color pallette from
+            matplotlib.
+        """
+        if not isinstance(name, str):
+            raise TypeError("name must be a string")
+        self.name = name
+        if not isinstance(instrument_type, str):
+            raise TypeError("instrument_type must be a string")
+        self.instrument_type = instrument_type
+        # Check that plot_color is a valid hex color code if its not None
+        if plot_color is not None:
+            if not bool(re.search(re.compile("^#([A-Fa-f0-9]{6})$"), plot_color)):
+                raise ValueError("plot_color must be a valid hex color code")
+        self.plot_color = plot_color
+
+    def __str__(self) -> str:
+        return self.name
+
+    def __repr__(self) -> str:
+        lines = [
+            "Instrument(",
+            f"    Name = {self.name}",
+        ]
+        if self.instrument_type:
+            lines.append(f"    Type = {self.instrument_type}")
+        if self.inst_plot_color:
+            lines.append(f"    Plot color = {self.inst_plot_color}")
+        return "\n".join(lines)
+
+    def __eq__(self, other):
+        if not isinstance(other, Instrument):
+            return False
+        else:
+            return self.name == other.name
+
+
 class Program:
     def __init__(
         self,
         progID: str,
-        instrument: str,
-        priority: int = None,
+        instrument: Instrument,
+        priority: int,
         time_share_allocated: float = 0.0,
         plot_color: str = None,
-        inst_plot_color: str = None,
     ):
         """
         Initialize a new instance of the Program class.
@@ -226,8 +274,8 @@ class Program:
         if not isinstance(progID, str):
             raise TypeError("progID must be a string")
         self.progID = progID
-        if not isinstance(instrument, str):
-            raise TypeError("instrument must be a string")
+        if not isinstance(instrument, Instrument):
+            raise TypeError("instrument must be of type Instrument")
         self.instrument = instrument
         # Check that priority value is valid
         if priority < 0 or priority > 3:
@@ -240,13 +288,6 @@ class Program:
             if not (bool(re.search(re.compile("^#([A-Fa-f0-9]{6})$"), plot_color))):
                 raise ValueError("plot_color must be a valid hex color code")
         self.plot_color = plot_color
-        # Check that inst_plot_color is a valid hex color code if its not None
-        if inst_plot_color is not None:
-            if not (
-                bool(re.search(re.compile("^#([A-Fa-f0-9]{6})$"), inst_plot_color))
-            ):
-                raise ValueError("inst_plot_color must be a valid hex color code")
-        self.inst_plot_color = inst_plot_color
         # Check that time_share_allocated is valid
         if not (0 <= time_share_allocated <= 1):
             raise ValueError("Time share must be between 0 and 1")
@@ -1513,6 +1554,25 @@ class Plan:
         else:
             plt.close()
 
+    def _instruments_analysis(self):
+        """
+        Analyze the instruments used in the plan. It registers which instruments are used in this
+        plan and assigns a default plot color if the user didn't provide one.
+        """
+        self.instruments: List[Instrument] = []
+        for obs in self.observations:
+            instrument = obs.target.program.instrument
+            if instrument not in self.instruments:
+                self.instruments.append(instrument)
+
+        # Assign default colors to instruments that don't have a color assigned
+        default_colors = itertools.cycle(
+            [mcolors.rgb2hex(color) for color in plt.get_cmap("Pastel1").colors]
+        )
+        for instrument in self.instruments:
+            if instrument.plot_color is None:
+                instrument.plot_color = next(default_colors)
+
     def plot_altaz(self, display: bool = True, path: str = None) -> None:
         """
         Plot the azimuth and altitude of the observations.
@@ -1530,27 +1590,8 @@ class Plan:
         # Initialize the figure and subplots
         _, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 8), sharex=True)
 
-        # Get which programs are part of this plan
-        instruments = list(
-            set(
-                [
-                    (obs.target.program.instrument, obs.target.program.inst_plot_color)
-                    for obs in self.observations
-                ]
-            )
-        )
-        # Define unique colors for each instrument
-        # if the instuments have their inst_plot_color attribute set, use that color
-        # otherwise use the default color ('Pastel1' color pallette from matplotlib)
-        inst_default_colors = itertools.cycle(
-            [mcolors.rgb2hex(color) for color in plt.get_cmap("Pastel1").colors]
-        )
-        inst_colors = {}
-        for inst, col in instruments:
-            if col is None:
-                inst_colors[inst] = next(inst_default_colors)
-            else:
-                inst_colors[inst] = col
+        # Analyse the instruments in this plan
+        self._instruments_analysis()
 
         # Iterate through observations and plot them
         for i, obs in enumerate(self.observations):
@@ -1588,22 +1629,23 @@ class Plan:
 
         # Shaded regions
         for i in range(len(self.observations)):
+            obs = self.observations[i]
             # Shade the observation time color coded by instrument
             ax1.axvspan(
-                self.observations[i].start_time,
-                self.observations[i].end_time,
-                color=inst_colors[self.observations[i].target.program.instrument],
+                obs.start_time,
+                obs.end_time,
+                color=obs.target.program.instrument.plot_color,
                 alpha=0.7,
             )
             ax2.axvspan(
-                self.observations[i].start_time,
-                self.observations[i].end_time,
-                color=inst_colors[self.observations[i].target.program.instrument],
+                obs.start_time,
+                obs.end_time,
+                color=obs.target.program.instrument.plot_color,
                 alpha=0.7,
             )
             if i < len(self.observations) - 1:
                 # Shade the overhead between observations
-                end_current_obs = self.observations[i].end_time
+                end_current_obs = obs.end_time
                 start_next_obs = self.observations[i + 1].start_time
                 if start_next_obs > end_current_obs:  # Ensure there is a gap
                     ax1.axvspan(
@@ -1614,9 +1656,15 @@ class Plan:
                     )
 
         # Use scatter plot for the legend markers
-        for inst, color in inst_colors.items():
+        for inst in self.instruments:
             ax1.scatter(
-                [], [], label=inst, color=color, edgecolor="none", s=100, marker="s"
+                [],
+                [],
+                label=inst.name,
+                color=inst.plot_color,
+                edgecolor="none",
+                s=100,
+                marker="s",
             )
 
         # Adjusting legend
@@ -1718,4 +1766,3 @@ class Plan:
 
     def __str__(self):
         return self.to_df().to_string()
-        # return self.print_plan(save=False)
