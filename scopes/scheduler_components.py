@@ -4,7 +4,7 @@ import re
 import uuid
 import warnings
 from datetime import date, datetime, time, timedelta
-from typing import Any, Callable, Dict, List
+from typing import Any, Callable, Dict, List, Optional
 
 import astropy.units as u
 import matplotlib.colors as mcolors
@@ -199,11 +199,11 @@ class Instrument:
         ----------
         name : str
             The name of the instrument.
-        instrument_type : str
-            The type of the instrument.
+        instrument_type : str, optional
+            The type of the instrument. Default is an empty string: "".
         plot_color : str, optional
             The color to use when plotting an observation of this instrument. Must be a valid hex
-            code. By default the colors will be chosen from the 'Set2' color pallette from
+            code. By default the colors will be chosen from the 'Pastel1' color pallette from
             matplotlib.
         """
         if not isinstance(name, str):
@@ -215,7 +215,9 @@ class Instrument:
         # Check that plot_color is a valid hex color code if its not None
         if plot_color is not None:
             if not bool(re.search(re.compile("^#([A-Fa-f0-9]{6})$"), plot_color)):
-                raise ValueError("plot_color must be a valid hex color code")
+                raise ValueError(
+                    "plot_color must be a valid hex color code, e.g. '#FF0000'"
+                )
         self.plot_color = plot_color
 
     def __str__(self) -> str:
@@ -286,7 +288,9 @@ class Program:
         # Check that plot_color is a valid hex color code if its not None
         if plot_color is not None:
             if not (bool(re.search(re.compile("^#([A-Fa-f0-9]{6})$"), plot_color))):
-                raise ValueError("plot_color must be a valid hex color code")
+                raise ValueError(
+                    "plot_color must be a valid hex color code, e.g. '#FF0000'"
+                )
         self.plot_color = plot_color
         # Check that time_share_allocated is valid
         if not (0 <= time_share_allocated <= 1):
@@ -418,7 +422,7 @@ class Target:
         name: str,
         program: Program,
         coords: SkyCoord,
-        priority: int = None,
+        priority: int,
         comment: str = "",
     ):
         """
@@ -438,17 +442,28 @@ class Target:
         comment : str, optional
             A comment about the target directed to the observer. Defaults to an empty string.
         """
+        # Value checks
+        if not isinstance(name, str):
+            raise TypeError("name must be a string")
         self.name = name
+        if not isinstance(program, Program):
+            raise TypeError("program must be of type Program")
         self.program = program
+        if not isinstance(coords, SkyCoord):
+            raise TypeError("coords must be of type SkyCoord")
         self.coords = coords
         self.ra_deg = coords.ra.deg
         self.dec_deg = coords.dec.deg
         # Check that priority value is valid
+        if not isinstance(priority, int):
+            raise TypeError("Priority must be an integer")
         if (priority % 1) != 0:
             raise TypeError("Priority must be an integer")
         if (priority < 0) or (priority > 3):
             raise ValueError("Priority must be between 0 and 3")
         self.priority = priority
+        if not isinstance(comment, str):
+            raise TypeError("comment must be a string")
         self.comment = comment
 
         self.fairness_merits: List[Merit] = []  # List of all fairness merits
@@ -520,7 +535,7 @@ class Observation:
         target : Target
             The Target object representing the target being observed.
         exposure_time : float
-            The duration of the observation in seconds.
+            The exposure time, or duration, of the observation in seconds.
         """
         if not isinstance(target, Target):
             raise TypeError("target must be of type Target")
@@ -782,7 +797,10 @@ class Overheads:
     """
 
     def __init__(
-        self, slew_rate_az: float, slew_rate_alt: float, cable_wrap_angle: float = None
+        self,
+        slew_rate_az: float,
+        slew_rate_alt: float,
+        cable_wrap_angle: Optional[float] = None,
     ):
         """
         Initialize a new instance of the Overheads class. The slew rates are given in degrees per
@@ -794,6 +812,8 @@ class Overheads:
             The azimuth slew rate in degrees per second.
         slew_rate_alt : float
             The altitude slew rate in degrees per second.
+        cable_wrap_angle : float, optional
+            The azimuth angle where the cable wrap limit is at, in degrees. Default is None.
         """
         # Validate that slew rates are positive
         if slew_rate_az <= 0 or slew_rate_alt <= 0:
@@ -809,6 +829,20 @@ class Overheads:
         self.overheads = []
 
     def _validate_function_params(self, func):
+        """
+        Validate the parameters of the given function.
+
+        Parameters
+        ----------
+        func : Callable
+            The function to validate.
+
+        Returns
+        -------
+        bool
+            True if the function has exactly two parameters named 'observation1' and 'observation2',
+            False otherwise.
+        """
         params = inspect.signature(func).parameters
         param_names = list(params.keys())
         expected_names = ["observation1", "observation2"]
@@ -924,9 +958,6 @@ class Overheads:
         slew_time = max([slew_time_az, slew_time_alt]) / 86400  # Convert to days
         return slew_time
 
-    def __str__(self) -> str:
-        return f"Overheads(\n\tslew_rate_az={self.slew_rate_az}, \n\tslew_rate_alt={self.slew_rate_alt}, \n\tcable_wrap_limit={self.cable_wrap_angle})"
-
     def calculate_transition(self, observation1, observation2):
         """
         Calculate the total overhead time between two observations.
@@ -958,6 +989,9 @@ class Overheads:
         total_overhead += extra_overhead_time
 
         return total_overhead
+
+    def __str__(self) -> str:
+        return f"Overheads(\n\tslew_rate_az={self.slew_rate_az}, \n\tslew_rate_alt={self.slew_rate_alt}, \n\tcable_wrap_limit={self.cable_wrap_angle})"
 
 
 class Plan:
@@ -1302,7 +1336,7 @@ class Plan:
         else:
             plt.close()
 
-    def plot_interactive(self, save: bool = False, path: str = None):
+    def plot_interactive(self, path: str = None):
         """
         Makes an interactive plot of the Plan using Plotly.
 
@@ -1487,11 +1521,8 @@ class Plan:
         )
 
         # Saving the plot if requested
-        if save:
-            if path is None:
-                raise ValueError("Path must be specified if save is True")
-            else:
-                fig.write_image(path, format="png")
+        if path is not None:
+            fig.write_image(path, format="png")
 
         fig.show()
 
@@ -1729,7 +1760,7 @@ class Plan:
                     "Start Time": start_time.strftime("%H:%M:%S"),
                     "Exp Time": format_timedelta(exp_time),
                     "Exp Time (s)": int(exp_time.total_seconds()),
-                    "Comment for the observer": obs.target.comment,
+                    "Comment": obs.target.comment,
                 }
             )
 
@@ -1743,7 +1774,7 @@ class Plan:
             "Start Time",
             "Exp Time",
             "Exp Time (s)",
-            "Comment for the observer",
+            "Comment",
         ]
         self.df = pd.DataFrame(data, columns=columns)
 
