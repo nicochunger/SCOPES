@@ -422,7 +422,7 @@ class Target:
         name: str,
         program: Program,
         coords: SkyCoord,
-        priority: int,
+        priority: Optional[int] = None,
         comment: str = "",
     ):
         """
@@ -455,15 +455,15 @@ class Target:
         self.ra_deg = coords.ra.deg
         self.dec_deg = coords.dec.deg
         # Check that priority value is valid
-        if not isinstance(priority, int):
-            raise TypeError("Priority must be an integer")
-        if (priority % 1) != 0:
-            raise TypeError("Priority must be an integer")
+        if priority is not None and not isinstance(priority, int):
+            raise TypeError(
+                f"Priority must be an integer, given: {priority} ({type(priority)})"
+            )
         if (priority < 0) or (priority > 3):
-            raise ValueError("Priority must be between 0 and 3")
+            raise ValueError(f"Priority must be between 0 and 3, given: {priority}")
         self.priority = priority
         if not isinstance(comment, str):
-            raise TypeError("comment must be a string")
+            raise TypeError(f"comment must be a string, given: '{comment}'")
         self.comment = comment
 
         self.fairness_merits: List[Merit] = []  # List of all fairness merits

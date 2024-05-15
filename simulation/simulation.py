@@ -110,7 +110,7 @@ class Simulation:
                 tar["catalog_name"],
                 prog,
                 coords=skycoord,
-                priority=tar["priority"],
+                priority=int(tar["priority"]),
                 # exposure_time=tar["texp"] / 86400,
             )
 
@@ -145,7 +145,7 @@ class Simulation:
                     merit_list.append(
                         Merit(
                             "PhaseSpecific",
-                            merits.periodic_gaussian,
+                            merits.phase_specific,
                             merit_type="efficiency",
                             parameters={
                                 "epoch": tar["epoch"],
@@ -295,7 +295,7 @@ class Simulation:
         scheduler_instance = self.scheduler(night, observations, self.overheads)
 
         # Create the plan
-        plan = scheduler_instance.run2(K=5)
+        plan = scheduler_instance.run(K=5)
         return plan
 
     def update_tracking_tables(self, plan: Plan):
@@ -549,9 +549,7 @@ class Simulation:
             self.update_tracking_tables(plan)
 
             # Save the plan (plots, tables, etc.)
-            plan.print_plan(
-                save=True, path=f"{self.save_folder}/plans/plan_{night.night_date}.txt"
-            )
+            plan.to_csv(f"{self.save_folder}/plans/plan_{night.night_date}.csv")
             plan.plot(
                 display=False,
                 path=f"{self.save_folder}/night_plots/plot_{night.night_date}.png",

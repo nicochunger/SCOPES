@@ -367,56 +367,56 @@ def culmination_efficiency(observation: Observation, verbose: bool = False) -> f
     return merit
 
 
-def periodic_gaussian(
-    observation: Observation,
-    epoch: float,
-    period: float,
-    sigma: float,
-    phases: list = [0.0],
-    verbose: bool = False,
-) -> float:
-    """
-    # TODO Change this entire merit with the version I show in the documentation as its more stable
-    and the sigma actually makes physical sense.
+# def periodic_gaussian(
+#     observation: Observation,
+#     epoch: float,
+#     period: float,
+#     sigma: float,
+#     phases: list = [0.0],
+#     verbose: bool = False,
+# ) -> float:
+#     """
+#     # TODO Change this entire merit with the version I show in the documentation as its more stable
+#     and the sigma actually makes physical sense.
 
-    Periodic Gaussian merit function.
+#     Periodic Gaussian merit function.
 
-    Analytic expression: exp(-0.5(sin(2pi(x-epoch)/period)/s)^2)
+#     Analytic expression: exp(-0.5(sin(2pi(x-epoch)/period)/s)^2)
 
-    The introduction of the sine function breaks the traditional meaning of the standard deviation.
-    So the s parameter will have to be finetuned depending on the period.
+#     The introduction of the sine function breaks the traditional meaning of the standard deviation.
+#     So the s parameter will have to be finetuned depending on the period.
 
-    Parameters
-    ----------
-    x : float
-        The x value at which to evaluate the merit function.
-    epoch : float
-        Where the peak of the merit will be centered
-    period : float
-        The period of the Gaussian.
-    sigma : float
-        Measure of the width of each Gaussian.
-    phases : list, optional
-        List of phases at which the gaussians should peak. Defaults to [0.0].
-    verbose : bool, optional
-        If True, print the calculated merit. Defaults to False.
-    """
-    merit = 0.0
-    for phase in phases:
-        merit += np.exp(
-            -0.5
-            * (
-                np.sin(
-                    np.pi * (observation.start_time - (epoch + phase * period)) / period
-                )
-                / sigma
-            )
-            ** 2
-        )
-    if verbose:
-        print(f"current phase = {((observation.start_time - epoch) % period) / period}")
-        print(f"{merit = }")
-    return merit
+#     Parameters
+#     ----------
+#     x : float
+#         The x value at which to evaluate the merit function.
+#     epoch : float
+#         Where the peak of the merit will be centered
+#     period : float
+#         The period of the Gaussian.
+#     sigma : float
+#         Measure of the width of each Gaussian.
+#     phases : list, optional
+#         List of phases at which the gaussians should peak. Defaults to [0.0].
+#     verbose : bool, optional
+#         If True, print the calculated merit. Defaults to False.
+#     """
+#     merit = 0.0
+#     for phase in phases:
+#         merit += np.exp(
+#             -0.5
+#             * (
+#                 np.sin(
+#                     np.pi * (observation.start_time - (epoch + phase * period)) / period
+#                 )
+#                 / sigma
+#             )
+#             ** 2
+#         )
+#     if verbose:
+#         print(f"current phase = {((observation.start_time - epoch) % period) / period}")
+#         print(f"{merit = }")
+#     return merit
 
 
 def phase_specific(
@@ -469,13 +469,12 @@ def phase_specific(
     merits = []
     for phase in phases:
         x = np.mod(observation.start_time - epoch, period) / period
-        if abs(x - phase) <= 0.5:
-            merit = 0
-            for i in range(-1, 2):
-                merit += np.exp(-0.5 * (((x - (phase - i)) / (sigma)) ** 2))
-            merits.append(merit)
+        merit = 0
+        for i in range(-1, 2):
+            merit += np.exp(-0.5 * (((x - (phase - i)) / (sigma)) ** 2))
+        merits.append(merit)
 
-    return max(merits)
+    return np.max(merits)
 
 
 def time_critical(
