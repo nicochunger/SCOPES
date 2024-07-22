@@ -87,7 +87,7 @@ ipython_config.py
 *.pkl
 *.stats
 .vscode/
-simulation/simulation_results/
+simulation/
 programs/
 
 
