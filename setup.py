@@ -11,7 +11,7 @@ with open("scopes/__init__.py", "r") as f:
     version = re.search(r'^__version__ = [\'"]([^\'"]*)[\'"]', f.read(), re.M).group(1)
 
 setup(
-    name="scopes",
+    name="scopes-astro",
     version=version,
     author="Nicolas Unger",
     author_email="nicolas.unger@unige.ch",
@@ -31,7 +31,7 @@ setup(
     ],
     extras_require={"dev": ["pytest", "sphinx"]},
     classifiers=[
-        "Development Status :: 3 - Alpha",
+        "Development Status :: 4 - Beta",
         "Intended Audience :: Science/Research",
         "Topic :: Scientific/Engineering :: Astronomy",
         "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
