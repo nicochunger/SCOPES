@@ -1,3 +1,8 @@
+0.3.1 - 05.08.2024
+
+- Added a night_duration attribute to the night object. A datetime.timedelta object that represents 
+  the duration of the night.
+
 0.3.0 - 06.05.2024
 
 - Implemented a Local Search Heuristic that optimizes the overall overhead time of a plan.

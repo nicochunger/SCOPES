@@ -110,6 +110,11 @@ class Night:
             )
             self.night_time_range = self.time_range_astronomical
 
+        # Save the duration of the night
+        self.night_duration = (
+            self.night_time_range[-1] - self.night_time_range[0]
+        ).to_datetime()
+
         # Calculate the alt-az frame of the moon for the night
         self.moon_altaz_frame = self.observer.moon_altaz(self.night_time_range)
 
