@@ -1,3 +1,12 @@
+0.3.2 - 06.08.2024
+
+- Added matplotlib to the requirements and removed plotly from the top imports of scheduler_components.py
+  This way plotly will only be imported when the plot_interactive() method is called.
+- Added some __repr__ and __eq__ methods to the Program and Target classes.
+- Fixed a bug in the Instrument class where the __repr__ was referencing an old attribute name.
+- Get the logo from the GitHub URL instead of the local file of the repo. This way the logo can be
+  displayed in PyPI.
+
 0.3.1 - 05.08.2024
 
 - Added a night_duration attribute to the night object. A datetime.timedelta object that represents 

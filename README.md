@@ -1,4 +1,4 @@
-![logo](logo.png)
+![logo](https://raw.githubusercontent.com/nicochunger/SCOPES/main/logo.png)
 
 # SCOPES
 
