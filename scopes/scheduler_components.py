@@ -12,7 +12,6 @@ import matplotlib.dates as mdates
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import plotly.graph_objs as go
 import pytz
 from astroplan import Observer
 from astropy.coordinates import SkyCoord
@@ -194,6 +193,15 @@ class Night:
 
         return "\n".join(lines)
 
+    def __repr__(self) -> str:
+        return self.__str__()
+
+    def __eq__(self, other):
+        if not isinstance(other, Night):
+            return False
+        else:
+            return self.night_date == other.night_date
+
 
 class Instrument:
     def __init__(self, name: str, instrument_type: str = "", plot_color: str = None):
@@ -235,8 +243,8 @@ class Instrument:
         ]
         if self.instrument_type:
             lines.append(f"    Type = {self.instrument_type}")
-        if self.inst_plot_color:
-            lines.append(f"    Plot color = {self.inst_plot_color}")
+        if self.plot_color:
+            lines.append(f"    Plot color = {self.plot_color}")
         return "\n".join(lines)
 
     def __eq__(self, other):
@@ -329,6 +337,15 @@ class Program:
             f"    Priority = {self.priority})",
         ]
         return "\n".join(lines)
+
+    def __repr__(self) -> str:
+        return self.__str__()
+
+    def __eq__(self, other):
+        if not isinstance(other, Program):
+            return False
+        else:
+            return self.progID == other.progID
 
 
 class Merit:
@@ -524,6 +541,12 @@ class Target:
 
     def __repr__(self) -> str:
         return self.__str__()
+
+    def __eq__(self, other):
+        if not isinstance(other, Target):
+            return False
+        else:
+            return self.name == other.name
 
 
 class Observation:
@@ -728,7 +751,6 @@ class Observation:
         """
         # --- Fairness ---
         # Balances time allocation and priority
-        # fairness = self.fairness_value
         fairness = self.fairness()
 
         # --- Sensibility ---
@@ -1353,6 +1375,9 @@ class Plan:
             The path to the file where the plot will be saved. Defaults to None. Ignored if save is
             False.
         """
+        # Import Plotly here to avoid unnecessary dependencies
+        import plotly.graph_objs as go
+
         first_obs = self.observations[0]
 
         # Get sunset and sunrise times for this night
