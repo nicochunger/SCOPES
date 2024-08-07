@@ -8,18 +8,18 @@ SCOPES is an automated scheduler for astronomical observations.
 
 ## Installation
 
-From the terminal, go the the folder where the repository was downloaded. Then run the following command to install the package:
+To install SCOPES, open your terminal and run the following command:
 
-```pip install .```
+`pip install scopes-astro`
 
-Then from within Python, the package is imported as
+You can then import the package in your Python code with:
 
 `import scopes`
 
 ## Examples
 
-There a python notebook with an example of how to use SCOPES in `scopes_example.ipynb`
+For an example of how to use SCOPES, you can check out the Python notebook: [`scopes_example.ipynb`](https://github.com/nicochunger/SCOPES/blob/main/scopes_example.ipynb)
 
 ## Documentation
 
-A full documentation of the package contents and classes can be found [here](https://scopes-docs.readthedocs.io/en/latest/)
+Comprehensive documentation, including details on package contents and class definitions, is available [here](https://github.com/nicochunger/SCOPES/blob/main/SCOPES_documentation.pdf).
