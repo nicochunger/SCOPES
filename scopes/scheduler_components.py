@@ -341,12 +341,6 @@ class Program:
     def __repr__(self) -> str:
         return self.__str__()
 
-    def __eq__(self, other):
-        if not isinstance(other, Program):
-            return False
-        else:
-            return self.progID == other.progID
-
 
 class Merit:
     def __init__(
@@ -609,6 +603,17 @@ class Observation:
         start_time : float
             The start time of the observation in JD (Julian Date).
         """
+        # Check night has been assigned
+        if not hasattr(self, "night"):
+            raise AttributeError("Night must be assigned to the observation first")
+        # Check if the start time is within the night time range
+        if not (
+            self.night.night_time_range[0].jd
+            <= start_time
+            <= self.night.night_time_range[-1].jd
+        ):
+            raise ValueError("Start time must be within the night time range")
+
         self.start_time = start_time
         self.end_time = self.start_time + self.exposure_time
 
