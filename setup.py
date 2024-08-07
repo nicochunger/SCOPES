@@ -42,4 +42,10 @@ setup(
     python_requires=">=3.8",
     license="GNU General Public License v3.0",
     keywords="astronomy scheduling observation planning",
+    project_urls={
+        "GitHub": "https://github.com/nicochunger/SCOPES",
+        # "Documentation": "https://scopes-astro.readthedocs.io/en/latest/",
+        "Documentation": "https://github.com/nicochunger/SCOPES/blob/main/SCOPES_documentation.pdf",
+        "Changelog": "https://github.com/nicochunger/SCOPES/blob/main/CHANGELOG.txt",
+    },
 )
