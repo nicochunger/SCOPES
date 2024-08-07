@@ -4,7 +4,7 @@ import re
 import uuid
 import warnings
 from datetime import date, datetime, time, timedelta
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Union
 
 import astropy.units as u
 import matplotlib.colors as mcolors
@@ -444,7 +444,7 @@ class Target:
         name: str,
         program: Program,
         coords: SkyCoord,
-        priority: Optional[int] = None,
+        priority: Union[int, None] = None,
         comment: str = "",
     ):
         """
@@ -477,12 +477,14 @@ class Target:
         self.ra_deg = coords.ra.deg
         self.dec_deg = coords.dec.deg
         # Check that priority value is valid
-        if priority is not None and not isinstance(priority, int):
-            raise TypeError(
-                f"Priority must be an integer, given: {priority} ({type(priority)})"
-            )
-        if (priority < 0) or (priority > 3):
-            raise ValueError(f"Priority must be between 0 and 3, given: {priority}")
+        if priority is not None:
+            if not isinstance(priority, int):
+                raise TypeError(
+                    f"Priority must be an integer, given: {priority} ({type(priority)})"
+                )
+        if isinstance(priority, int):
+            if (priority < 0) or (priority > 3):
+                raise ValueError(f"Priority must be between 0 and 3, given: {priority}")
         self.priority = priority
         if not isinstance(comment, str):
             raise TypeError(f"comment must be a string, given: '{comment}'")
