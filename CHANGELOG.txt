@@ -1,3 +1,8 @@
+0.3.3 - 07.08.2024
+
+- Added tests for all classes from scheduler_components.
+- Cleaner README with updated links.
+
 0.3.2 - 06.08.2024
 
 - Added matplotlib to the requirements and removed plotly from the top imports of scheduler_components.py
