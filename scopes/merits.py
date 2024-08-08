@@ -195,7 +195,7 @@ def moon_separation(
 
     m = ((sep - min_sep) / (max_sep - min_sep)) ** alpha
 
-    Parameters`
+    Parameters
     ----------
     observation : Observation
         The Observation object to be used
@@ -432,14 +432,21 @@ def phase_specific(
     to be taken at a specific phase of the orbit of a planet. Its analytic expression is a slight
     modification of the merit presented by Granzer (2004):
 
-    $$ m(x, phi) = sum_{i=-1}^{1} exp(-x(t) - (phi - i) / 2 sigma)^2 $$
-    $$ x(t) = mod(t - t0, p) / p$$, for |x| <= 0.5
+    .. math::
 
-    where t is time, p is the period, phi is the desired phase at which to observe, and sigma is the
+        m(x, \\phi) = \\sum_{i=-1}^{1} \\exp\\left(-\\frac{(x(t) - (\\phi - i))^2}{2 \\sigma^2}\\right)
+
+    .. math::
+
+        x(t) = \\frac{\\mod(t - t0, p)}{p}, \\text{ for } |x| \\leq 0.5
+
+    where t is time, p is the period, \\phi is the desired phase at which to observe, and \\sigma is the
     standard deviation of the Gaussian in phase space. If more than one phase is given, the merit
     will be the max of the merits for each phase:
 
-    $$ m = max_{phi} m(x, phi) $$
+    .. math::
+
+        m = \\max_{\\phi} m(x, \\phi)
 
     Parameters
     ----------
@@ -509,8 +516,8 @@ def time_critical(
     verbose : bool, optional
         If True, print the calculated merit. Defaults to False.
 
-    Returns:
-    --------
+    Returns
+    -------
     float: The time criticality merit of the observation.
     """
     arg1 = (observation.start_time - (start_time - start_time_tolerance)) / steepness
