@@ -1,3 +1,7 @@
+0.3.6 - 08.08.2024
+
+- Versions 0.3.4, 0.3.5, and 0.3.6 were improvements in the documentation and the README file.
+
 0.3.3 - 07.08.2024
 
 - Added tests for all classes from scheduler_components.
