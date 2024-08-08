@@ -56,10 +56,10 @@ If you use SCOPES in your research, please cite it appropriately. Publication co
 ## Frequently Asked Questions
 
 1. **How can I prioritize certain targets over others in my observation schedule?**
-    - You can prioritize targets by assigning them a priority level (0: Top priority, 1: High, 2: Normal, 3: Low) within their respective programs. SCOPES uses a combined priority system that considers both program and target priorities to influence the scheduling. See Sect. [\ref{sec:priority}](#) for more information.
+    - You can prioritize targets by assigning them a priority level (0: Top priority, 1: High, 2: Normal, 3: Low) within their respective programs. SCOPES uses a combined priority system that considers both program and target priorities to influence the scheduling.
 
 2. **What should I do if my observing program has used more or less time than allocated?**
-    - Use the `TimeShare` merit, which accounts for the percent difference between allocated and used time, to adjust the schedule accordingly. This merit only works when used over more than one night. It will balance time distribution over several nights to ensure fair time allocation among programs. See Sect. [\ref{sec:time-share}](#) for more information.
+    - Use the `TimeShare` merit, which accounts for the percent difference between allocated and used time, to adjust the schedule accordingly. This merit only works when used over more than one night. It will balance time distribution over several nights to ensure fair time allocation among programs.
 
 3. **How can I ensure that my observations are scheduled only during the night?**
     - SCOPES provides an `AtNight` veto merit that ensures observations are only scheduled during nighttime as defined by civil, nautical, or astronomical twilight limits.
@@ -74,7 +74,7 @@ If you use SCOPES in your research, please cite it appropriately. Publication co
     - SCOPES includes an `Overheads` class where you can define telescope-specific overheads, including slew rates for azimuth and altitude. You can also add custom overhead functions if your telescope has unique requirements.
 
 7. **What should I do if my target needs to be observed at a specific phase of one of its planet's orbit?**
-    - You can use the `PhaseSpecific` efficiency merit, which allows scheduling based on the phase of a periodic event, such as a planet's orbit. Adjust the merit's parameters to match the desired observational phase. See Sect. [\ref{sec:phase-specific}](#) for more information.
+    - You can use the `PhaseSpecific` efficiency merit, which allows scheduling based on the phase of a periodic event, such as a planet's orbit. Adjust the merit's parameters to match the desired observational phase.
 
 8. **Can I schedule observations that must be completed before a specific time?**
     - Yes, SCOPES offers an `EndTime` veto merit, which ensures that observations do not extend beyond a specified time limit. This is useful for ensuring that time-sensitive observations are completed within a required timeframe.
