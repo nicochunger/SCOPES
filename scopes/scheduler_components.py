@@ -607,12 +607,12 @@ class Observation:
         if not hasattr(self, "night"):
             raise AttributeError("Night must be assigned to the observation first")
         # Check if the start time is within the night time range
-        if not (
-            self.night.night_time_range[0].jd
-            <= start_time
-            <= self.night.night_time_range[-1].jd
-        ):
-            raise ValueError("Start time must be within the night time range")
+        # if not (
+        #     self.night.night_time_range[0].jd
+        #     <= start_time
+        #     <= self.night.night_time_range[-1].jd
+        # ):
+        #     raise ValueError("Start time must be within the night time range")
 
         self.start_time = start_time
         self.end_time = self.start_time + self.exposure_time
@@ -1123,7 +1123,6 @@ class Plan:
         # Calculate the average airmass of the observations in the plan
         self.calculate_avg_airmass()
         # Calculate the evaluation of the plan
-        # self.evaluation = self.score * self.observation_ratio
         self.evaluation = w_score * self.score + w_overhead * self.observation_ratio
         return self.evaluation
 
@@ -1147,11 +1146,8 @@ class Plan:
         ----------
         display : bool, optional
             Option to display the plot. Defaults to True.
-        save : bool, optional
-            If True, and path is given, save the plot to a file. Defaults to False.
         path : str, optional
-            The path to the file where the plot will be saved. Defaults to None. Ignored if save is
-            False.
+            The path to the file where the plot will be saved. Defaults to None.
         """
         first_obs = self.observations[0]
 
@@ -1376,11 +1372,8 @@ class Plan:
 
         Parameters
         ----------
-        save : bool, optional
-            If True, and path is given, save the plot to a file. Defaults to False.
         path : str, optional
-            The path to the file where the plot will be saved. Defaults to None. Ignored if save is
-            False.
+            The path to the file where the plot will be saved. Defaults to None.
         """
         # Import Plotly here to avoid unnecessary dependencies
         import plotly.graph_objs as go
@@ -1526,12 +1519,6 @@ class Plan:
         for twilight in shaded_dicts:
             fig.add_shape(**shaded_dicts[twilight])
 
-        # Add text annotations for twilight times
-        # fig.add_annotation(
-        #     x=sunset.datetime, y=30.5, text="Sunset", showarrow=False, xanchor="right"
-        # )
-        # Repeat for other twilight times
-
         # Set up airmass values and compute the corresponding altitudes for those airmass values
         desired_airmasses = np.arange(1.8, 0.9, -0.1)
         corresponding_altitudes = list(
@@ -1564,6 +1551,16 @@ class Plan:
         fig.show()
 
     def plot_polar(self, display: bool = True, path: str = None):
+        """
+        Plot the azimuth vs. altitude of the observations in a polar plot.
+
+        Parameters
+        ----------
+        display : bool, optional
+            Option to display the plot. Defaults to True.
+        path : str, optional
+            The path to the file where the plot will be saved. Defaults to None.
+        """
         # Create polar plot
         plt.figure(figsize=(8, 8))
         ax = plt.subplot(111, polar=True)
@@ -1649,11 +1646,8 @@ class Plan:
         ----------
         display : bool, optional
             Option to display the plot. Defaults to True.
-        save : bool, optional
-            If True, and path is given, save the plot to a file. Defaults to False.
         path : str, optional
-            The path to the file where the plot will be saved. Defaults to None. Ignored if save is
-            False.
+            The path to the file where the plot will be saved. Defaults to None.
         """
         # Initialize the figure and subplots
         _, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 8), sharex=True)
@@ -1819,8 +1813,15 @@ class Plan:
 
     def to_csv(self, *args, **kwargs):
         """
-        Create a CSV file for the pandas DataFrame representation of the Plan
+        Create a CSV file for the pandas DataFrame representation of the Plan.
         This method can take any keyword argument that the pd.DataFrame.to_csv() method can take.
+
+        Parameters
+        ----------
+        *args
+            Positional arguments that will be passed to pd.DataFrame.to_csv()
+        **kwargs
+            Keyword arguments that will be passed to pd.DataFrame.to_csv()
         """
         if not hasattr(self, "df"):
             self.to_df()
