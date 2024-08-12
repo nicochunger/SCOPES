@@ -89,6 +89,7 @@ ipython_config.py
 .vscode/
 simulation/
 programs/
+*.png
 
 
 # pyenv
