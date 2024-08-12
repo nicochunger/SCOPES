@@ -46,6 +46,6 @@ setup(
         "GitHub": "https://github.com/nicochunger/SCOPES",
         "ReadTheDocs": "https://scopes-docs.readthedocs.io/en/latest/",
         "Documentation": "https://github.com/nicochunger/SCOPES/blob/main/SCOPES_documentation.pdf",
-        "Changelog": "https://github.com/nicochunger/SCOPES/blob/main/CHANGELOG.txt",
+        "Changelog": "https://scopes-docs.readthedocs.io/en/latest/changelog.html",
     },
 )
