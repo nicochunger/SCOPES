@@ -39,11 +39,11 @@ To get started, import the package into your Python code:
 
 ### Examples
 
-You can find an example Jupyter notebook that details how to use SCOPES from a simple setup to a full night of observations: [`scopes_example.ipynb`](https://github.com/nicochunger/SCOPES/blob/main/scopes_example.ipynb)
+In the `docs/example_notebooks` directory you can find a Jupyter notebook that details how to use SCOPES from a simple setup to a full night of observations: [`scopes_example.ipynb`](https://github.com/nicochunger/SCOPES/blob/main/docs/example_notebooks/scopes_example.ipynb)
 
 ## Documentation
 
-For complete documentation, including detailed explanations of the scheduling strategy, merit functions, and advanced usage, visit the [SCOPES Documentation](https://github.com/nicochunger/SCOPES/blob/main/SCOPES_documentation.pdf).
+For a complete documentation, including detailed explanations of the scheduling strategy, merit functions, and advanced usage, visit the [SCOPES Documentation](https://github.com/nicochunger/SCOPES/blob/main/SCOPES_documentation.pdf).
 
 ## Acknowledgements
 
