@@ -10,3 +10,4 @@ astroplan
 tqdm
 pytz
 timezonefinder
+plotly
