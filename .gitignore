@@ -90,6 +90,7 @@ ipython_config.py
 simulation/
 programs/
 *.png
+*.csv
 
 
 # pyenv
