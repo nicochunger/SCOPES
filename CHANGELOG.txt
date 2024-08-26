@@ -1,3 +1,10 @@
+0.3.8 - 26.08.2024
+------------------
+
+- Changed the URL of the Changelog to be the one of the ReadTheDocs page.
+- Fixed the readthedocs autodocs section with full requirements for compilation.
+- Fixed bugs in a few tests that were failing.
+
 0.3.7 - 12.08.2024
 ------------------
 
