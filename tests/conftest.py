@@ -125,27 +125,35 @@ def example_veto_merit():
 
 
 @pytest.fixture
-def example_observation(example_target, example_merit):
+def example_observation(example_target, example_merit, example_night):
     example_target.add_merit(merit=example_merit)
-    return Observation(target=example_target, exposure_time=600.0)
+    obs = Observation(target=example_target, exposure_time=600.0)
+    obs.set_night(example_night)
+    return obs
 
 
 @pytest.fixture
 def example_observation_with_fairness(example_target, example_fairness_merit):
     example_target.add_merit(merit=example_fairness_merit)
-    return Observation(target=example_target, exposure_time=600.0)
+    obs = Observation(target=example_target, exposure_time=600.0)
+    obs.set_night(example_night)
+    return obs
 
 
 @pytest.fixture
 def example_observation_with_efficiency(example_target, example_efficiency_merit):
     example_target.add_merit(merit=example_efficiency_merit)
-    return Observation(target=example_target, exposure_time=600.0)
+    obs = Observation(target=example_target, exposure_time=600.0)
+    obs.set_night(example_night)
+    return obs
 
 
 @pytest.fixture
 def example_observation_with_veto(example_target, example_veto_merit):
     example_target.add_merit(merit=example_veto_merit)
-    return Observation(target=example_target, exposure_time=600.0)
+    obs = Observation(target=example_target, exposure_time=600.0)
+    obs.set_night(example_night)
+    return obs
 
 
 @pytest.fixture
