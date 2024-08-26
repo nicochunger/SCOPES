@@ -2,3 +2,11 @@ sphinx_rtd_theme
 sphinx-autodoc-typehints
 nbsphinx
 nbconvert
+numpy
+pandas
+matplotlib
+astropy
+astroplan
+tqdm
+pytz
+timezonefinder
