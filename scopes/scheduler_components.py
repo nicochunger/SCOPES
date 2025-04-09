@@ -14,10 +14,18 @@ import numpy as np
 import pandas as pd
 import pytz
 from astroplan import Observer
+from astroplan.exceptions import TargetAlwaysUpWarning
 from astropy.coordinates import SkyCoord
 from astropy.time import Time, TimeDelta
 from plotly.subplots import make_subplots
 from timezonefinder import TimezoneFinder
+
+# Ignore astroplan's TargetAlwaysUpWarning
+# This warning is raised when the target is always up during the night, which is not relevant for scheduling
+warnings.filterwarnings(
+    "ignore",
+    category=TargetAlwaysUpWarning,
+)
 
 
 class Night:
