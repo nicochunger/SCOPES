@@ -127,7 +127,7 @@ def example_veto_merit():
 @pytest.fixture
 def example_observation(example_target, example_merit, example_night):
     example_target.add_merit(merit=example_merit)
-    obs = Observation(target=example_target, exposure_time=600.0)
+    obs = Observation(target=example_target, duration=600.0)
     obs.set_night(example_night)
     return obs
 
@@ -135,7 +135,7 @@ def example_observation(example_target, example_merit, example_night):
 @pytest.fixture
 def example_observation_with_fairness(example_target, example_fairness_merit):
     example_target.add_merit(merit=example_fairness_merit)
-    obs = Observation(target=example_target, exposure_time=600.0)
+    obs = Observation(target=example_target, duration=600.0)
     obs.set_night(example_night)
     return obs
 
@@ -143,7 +143,7 @@ def example_observation_with_fairness(example_target, example_fairness_merit):
 @pytest.fixture
 def example_observation_with_efficiency(example_target, example_efficiency_merit):
     example_target.add_merit(merit=example_efficiency_merit)
-    obs = Observation(target=example_target, exposure_time=600.0)
+    obs = Observation(target=example_target, duration=600.0)
     obs.set_night(example_night)
     return obs
 
@@ -151,7 +151,7 @@ def example_observation_with_efficiency(example_target, example_efficiency_merit
 @pytest.fixture
 def example_observation_with_veto(example_target, example_veto_merit):
     example_target.add_merit(merit=example_veto_merit)
-    obs = Observation(target=example_target, exposure_time=600.0)
+    obs = Observation(target=example_target, duration=600.0)
     obs.set_night(example_night)
     return obs
 
@@ -174,7 +174,7 @@ def example_full_observation2(
         name="Target002", program=example_program, coords=new_coords, priority=1
     )
     new_target.add_merit(merit=example_merit)
-    example_observation2 = Observation(target=new_target, exposure_time=600.0)
+    example_observation2 = Observation(target=new_target, duration=600.0)
     example_observation2.set_night(example_night)
     example_observation2.set_start_time(2460524.7)
     example_observation2.skypath()
@@ -191,7 +191,7 @@ def example_full_observation3(
         name="Target003", program=example_program, coords=new_coords, priority=1
     )
     new_target.add_merit(merit=example_merit)
-    example_observation3 = Observation(target=new_target, exposure_time=600.0)
+    example_observation3 = Observation(target=new_target, duration=600.0)
     example_observation3.set_night(example_night)
     example_observation3.set_start_time(2460524.7)
     example_observation3.skypath()

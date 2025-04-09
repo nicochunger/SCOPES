@@ -549,7 +549,7 @@ class Observation:
     def __init__(
         self,
         target: Target,
-        exposure_time: float,
+        duration: float,
     ):
         """
         Initialize a new instance of the Observation class.
@@ -558,22 +558,22 @@ class Observation:
         ----------
         target : Target
             The Target object representing the target being observed.
-        exposure_time : float
+        duration : float
             The exposure time, or duration, of the observation in seconds.
         """
         if not isinstance(target, Target):
             raise TypeError("target must be of type Target")
         self.target = target
         # Check if exposure time makes sense
-        if exposure_time <= 0:
-            raise ValueError("exposure_time must be greater than 0")
+        if duration <= 0:
+            raise ValueError("duration must be greater than 0")
         # Check if exposure time is less than 1 second
-        if exposure_time < 1:
-            warnings.warn("exposure_time is less than 1 second")
+        if duration < 1:
+            warnings.warn("duration is less than 1 second")
         # Check if exposure time is greater than 9 hours
-        if exposure_time > 32400:
-            warnings.warn("exposure_time is greater than 9 hours")
-        self.exposure_time = exposure_time / 86400  # Convert to days for internal use
+        if duration > 32400:
+            warnings.warn("duration is greater than 9 hours")
+        self.duration = duration / 86400  # Convert to days for internal use
         # Telescope altitude limits. These are only used to calculate the minimum and maximum
         # altitudes of the target during the night. The actual observational limits are set by the
         # Altitude merit defined by the user.
@@ -615,7 +615,7 @@ class Observation:
         #     raise ValueError("Start time must be within the night time range")
 
         self.start_time = start_time
-        self.end_time = self.start_time + self.exposure_time
+        self.end_time = self.start_time + self.duration
 
     def skypath(self):
         """
@@ -806,7 +806,7 @@ class Observation:
         lines = [
             f"Observation(Target: {self.target.name},",
             f"            Start time: {self.start_time},",
-            f"            Exposure time: {self.exposure_time},",
+            f"            Exposure time: {self.duration},",
             f"            Score: {self.score})",
         ]
 
@@ -1066,7 +1066,7 @@ class Plan:
             return
         else:
             first_obs = self.observations[0]
-            observation_time = np.sum([obs.exposure_time for obs in self.observations])
+            observation_time = np.sum([obs.duration for obs in self.observations])
             # Check that overhead and observation time add up to the total time
             total_time = self.observations[-1].end_time - first_obs.start_time
             overhead_time = total_time - observation_time
@@ -1423,7 +1423,7 @@ class Plan:
             # Time range and altitude calculations
             # TODO clean up this part by using existing variables in the obs objects
             time_range = Time(
-                np.linspace(obs.start_time, (obs.start_time + obs.exposure_time), 20),
+                np.linspace(obs.start_time, (obs.start_time + obs.duration), 20),
                 format="jd",
             ).datetime
             altitudes = obs.target.coords.transform_to(
@@ -1451,7 +1451,7 @@ class Plan:
                 f"<b>{obs.target.name}</b><br>"
                 + f"{obs.target.program.instrument} {program_id}<br><br>"
                 + f"Start time: {Time(obs.start_time, format='jd').datetime.strftime('%H:%M:%S %d-%m-%Y')}<br>"
-                + f"Exp time: {timedelta(obs.exposure_time)}<br>"
+                + f"Exp time: {timedelta(obs.duration)}<br>"
                 + f"Comment: {obs.target.comment}"
                 + "<extra></extra>"
             )
@@ -1772,7 +1772,7 @@ class Plan:
 
         for obs in self.observations:
             start_time = Time(obs.start_time, format="jd").datetime
-            exp_time = timedelta(days=obs.exposure_time)
+            exp_time = timedelta(days=obs.duration)
             ra_str = obs.target.coords.ra.to_string(
                 unit="hour", sep=":", precision=0, pad=True
             )

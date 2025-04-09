@@ -6,9 +6,9 @@ from scopes.scheduler_components import Night, Observation
 
 
 def test_observation_initialization(example_target):
-    observation = Observation(target=example_target, exposure_time=3600)
+    observation = Observation(target=example_target, duration=3600)
     assert observation.target == example_target
-    assert observation.exposure_time == 3600 / 86400  # exposure time in days
+    assert observation.duration == 3600 / 86400  # exposure time in days
     assert observation.tel_alt_lower_lim == 10.0
     assert observation.tel_alt_upper_lim == 90.0
     assert observation.score == 0.0
@@ -17,25 +17,25 @@ def test_observation_initialization(example_target):
 
 def test_observation_invalid_target_type():
     with pytest.raises(TypeError):
-        Observation(target="InvalidTarget", exposure_time=3600)
+        Observation(target="InvalidTarget", duration=3600)
 
 
-def test_observation_invalid_exposure_time_value(example_target):
+def test_observation_invalid_duration_value(example_target):
     with pytest.raises(ValueError):
-        Observation(target=example_target, exposure_time=0)  # exposure_time must be > 0
+        Observation(target=example_target, duration=0)  # duration must be > 0
 
 
-def test_observation_warning_for_short_exposure_time(example_target):
+def test_observation_warning_for_short_duration(example_target):
     with pytest.warns(UserWarning):
         Observation(
-            target=example_target, exposure_time=0.5
+            target=example_target, duration=0.5
         )  # Warning for exposure time < 1 second
 
 
-def test_observation_warning_for_long_exposure_time(example_target):
+def test_observation_warning_for_long_duration(example_target):
     with pytest.warns(UserWarning):
         Observation(
-            target=example_target, exposure_time=32401
+            target=example_target, duration=32401
         )  # Warning for exposure time > 9 hours
 
 
@@ -48,9 +48,7 @@ def test_observation_set_start_time(example_observation: Observation):
     start_time = 2456789.5  # Example Julian Date
     example_observation.set_start_time(start_time)
     assert example_observation.start_time == start_time
-    assert (
-        example_observation.end_time == start_time + example_observation.exposure_time
-    )
+    assert example_observation.end_time == start_time + example_observation.duration
 
 
 def test_observation_skypath(example_observation: Observation, example_night: Night):
@@ -155,7 +153,7 @@ def test_observation_str_method(example_observation: Observation):
     expected_str = (
         f"Observation(Target: {example_observation.target.name},\n"
         f"            Start time: {example_observation.start_time},\n"
-        f"            Exposure time: {example_observation.exposure_time},\n"
+        f"            Exposure time: {example_observation.duration},\n"
         f"            Score: {example_observation.score})"
     )
     assert str(example_observation) == expected_str
@@ -166,15 +164,15 @@ def test_observation_repr_method(example_observation: Observation):
     expected_repr = (
         f"Observation(Target: {example_observation.target.name},\n"
         f"            Start time: {example_observation.start_time},\n"
-        f"            Exposure time: {example_observation.exposure_time},\n"
+        f"            Exposure time: {example_observation.duration},\n"
         f"            Score: {example_observation.score})"
     )
     assert repr(example_observation) == expected_repr
 
 
 def test_observation_equality(example_target):
-    observation1 = Observation(target=example_target, exposure_time=3600)
-    observation2 = Observation(target=example_target, exposure_time=3600)
+    observation1 = Observation(target=example_target, duration=3600)
+    observation2 = Observation(target=example_target, duration=3600)
     assert observation1 != observation2  # Different unique IDs, should not be equal
     assert observation1 == observation1  # Same object, should be equal
 
