@@ -1573,77 +1573,113 @@ class Plan:
         else:
             plt.close()
 
-    def plot_altaz(self, display: bool = True, path: str = None) -> None:
+    def plot_altaz(
+        self, color_by: str = "program", display: bool = True, path: str = None
+    ) -> None:
         """
         Plot the azimuth and altitude of the observations.
+
+        Parameters
+        ----------
+        color_by : str, optional
+            Determines how to color the observation segments. Can be 'program' (default) or
+            'instrument'.
+        display : bool, optional
+            Option to display the plot. Defaults to True.
+        path : str, optional
+            The path to the file where the plot will be saved. Defaults to None.
         """
+        if color_by not in ["program", "instrument"]:
+            raise ValueError("color_by must be either 'program' or 'instrument'")
+
         _, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 8), sharex=True)
-        # Derive a set of programs from observations
-        programs = {obs.target.program for obs in self.observations}
+
+        # Determine unique items and assign colors based on color_by
+        color_map = {}
+        legend_title = ""
+        prog_default_colors = itertools.cycle(
+            [mcolors.rgb2hex(color) for color in plt.get_cmap("Set2").colors]
+        )
+        inst_default_colors = itertools.cycle(
+            [mcolors.rgb2hex(color) for color in plt.get_cmap("Pastel1").colors]
+        )
+
+        if color_by == "program":
+            items = {obs.target.program for obs in self.observations}
+            legend_title = "Programs"
+            for item in items:
+                color_map[item.progID] = item.plot_color or next(prog_default_colors)
+        elif color_by == "instrument":
+            items = {
+                obs.instrument if obs.instrument else "None"
+                for obs in self.observations
+            }
+            legend_title = "Instruments"
+            for item in items:
+                color_map[item] = next(inst_default_colors)
+
+        # Plot Az/Alt lines
         for i, obs in enumerate(self.observations):
             jd_times = np.linspace(obs.start_time, obs.end_time, len(obs.obs_azimuths))
             ax1.plot(jd_times, obs.obs_azimuths, "-", lw=1, c="k")
             ax2.plot(jd_times, obs.obs_altitudes, "-", lw=1, c="k")
             if i < len(self.observations) - 1:
+                next_obs = self.observations[i + 1]
+                # Azimuth connection line
+                az_diff = abs(obs.obs_azimuths[-1] - next_obs.obs_azimuths[0])
+                az_linestyle = "--" if az_diff > 180 else "-"
                 ax1.plot(
-                    [jd_times[-1], self.observations[i + 1].start_time],
-                    [obs.obs_azimuths[-1], self.observations[i + 1].obs_azimuths[0]],
-                    "-"
-                    if abs(
-                        obs.obs_azimuths[-1] - self.observations[i + 1].obs_azimuths[0]
-                    )
-                    <= 180
-                    else "--",
+                    [jd_times[-1], next_obs.start_time],
+                    [obs.obs_azimuths[-1], next_obs.obs_azimuths[0]],
+                    linestyle=az_linestyle,
                     lw=1,
                     c="k",
                 )
+                # Altitude connection line
                 ax2.plot(
-                    [jd_times[-1], self.observations[i + 1].start_time],
-                    [obs.obs_altitudes[-1], self.observations[i + 1].obs_altitudes[0]],
+                    [jd_times[-1], next_obs.start_time],
+                    [obs.obs_altitudes[-1], next_obs.obs_altitudes[0]],
                     "-",
                     lw=1,
                     c="k",
                 )
+
+        # Plot colored spans for observations and grey spans for overheads
         for i, obs in enumerate(self.observations):
-            ax1.axvspan(
-                obs.start_time,
-                obs.end_time,
-                color=obs.target.program.plot_color or "gray",
-                alpha=0.7,
-            )
-            ax2.axvspan(
-                obs.start_time,
-                obs.end_time,
-                color=obs.target.program.plot_color or "gray",
-                alpha=0.7,
-            )
-            if (
-                i < len(self.observations) - 1
-                and self.observations[i + 1].start_time > obs.end_time
-            ):
-                ax1.axvspan(
-                    obs.end_time,
-                    self.observations[i + 1].start_time,
-                    color="grey",
-                    alpha=0.8,
-                )
-                ax2.axvspan(
-                    obs.end_time,
-                    self.observations[i + 1].start_time,
-                    color="grey",
-                    alpha=0.8,
-                )
-        for prog in programs:
+            if color_by == "program":
+                item_key = obs.target.program.progID
+            else:  # color_by == "instrument"
+                item_key = obs.instrument if obs.instrument else "None"
+
+            color = color_map.get(item_key, "gray")  # Default to gray if key not found
+
+            ax1.axvspan(obs.start_time, obs.end_time, color=color, alpha=0.7)
+            ax2.axvspan(obs.start_time, obs.end_time, color=color, alpha=0.7)
+
+            # Plot overhead time if applicable
+            if i < len(self.observations) - 1:
+                next_obs = self.observations[i + 1]
+                if next_obs.start_time > obs.end_time:
+                    ax1.axvspan(
+                        obs.end_time, next_obs.start_time, color="grey", alpha=0.8
+                    )
+                    ax2.axvspan(
+                        obs.end_time, next_obs.start_time, color="grey", alpha=0.8
+                    )
+
+        # Create legend
+        for item_key, color in color_map.items():
             ax1.scatter(
                 [],
                 [],
-                label=prog.progID,
-                color=prog.plot_color or "gray",
+                label=item_key,
+                color=color,
                 edgecolor="none",
                 s=100,
                 marker="s",
             )
-        ax1.legend(loc="best", title="Programs")
+
+        ax1.legend(loc="best", title=legend_title)
         ax1.set_ylabel("Azimuth Angle [deg]")
         ax1.set_ylim(0, 360)
         ax2.set_ylabel("Elevation Angle [deg]")
@@ -1651,6 +1687,7 @@ class Plan:
         ax2.set_xlabel("Observation Time [JD]")
         ax1.set_title("Azimuth (dashed line indicates boundary crossing)")
         ax2.set_title("Elevation")
+
         if path is not None:
             plt.tight_layout()
             plt.savefig(path, format="png")
