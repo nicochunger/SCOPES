@@ -17,7 +17,6 @@ from astroplan import Observer
 from astroplan.exceptions import TargetAlwaysUpWarning
 from astropy.coordinates import SkyCoord
 from astropy.time import Time, TimeDelta
-from plotly.subplots import make_subplots
 from timezonefinder import TimezoneFinder
 
 # Ignore astroplan's TargetAlwaysUpWarning
@@ -1384,6 +1383,7 @@ class Plan:
             The path to the file where the plot will be saved. Defaults to None.
         """
         # Import Plotly here to avoid unnecessary dependencies
+        from plotly.subplots import make_subplots
         import plotly.graph_objs as go
 
         first_obs = self.observations[0]

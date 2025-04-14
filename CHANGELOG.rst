@@ -2,6 +2,10 @@
 -----------
 
 - Changed ``exposure_time`` parameter to ``duration`` to be more agnostic to the type of observation.
+- Removed the ``TargetAlwaysUp`` warning from astroplan. This is caused when looking for the rise and set times
+  of a target that is always up, but this is not a problem for the scheduler and might be confusing for the user.
+- Fixed a small bug in the import of plotly. The idea is that it is an optional dependency and should not be
+  imported if not needed. It is only imported when the ``plot_interactive()`` method is called.
 
 0.3.8 - 26.08.2024
 ------------------
