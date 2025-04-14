@@ -1,0 +1,42 @@
+[build-system]
+requires = ["setuptools>=77", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "scopes-astro"
+version = "0.4.0"
+description = "System for Coordinating Observational Planning and Efficient Scheduling"
+readme = "README.md"
+requires-python = ">=3.8"
+license = "GPL-3.0-only"
+authors = [{ name = "Nicolas Unger", email = "nicolas.unger@unige.ch" }]
+keywords = ["astronomy", "scheduling", "observation", "planning"]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Intended Audience :: Science/Research",
+  "Topic :: Scientific/Engineering :: Astronomy",
+  "Programming Language :: Python :: 3",
+  "Operating System :: OS Independent",
+]
+dependencies = [
+  "numpy",
+  "pandas",
+  "matplotlib",
+  "astropy",
+  "astroplan",
+  "tqdm",
+  "pytz",
+  "timezonefinder",
+]
+
+[project.urls]
+"GitHub" = "https://github.com/nicochunger/SCOPES"
+"ReadTheDocs" = "https://scopes-docs.readthedocs.io/en/latest/"
+"Documentation" = "https://github.com/nicochunger/SCOPES/blob/main/SCOPES_documentation.pdf"
+"Changelog" = "https://scopes-docs.readthedocs.io/en/latest/changelog.html"
+
+[project.optional-dependencies]
+dev = ["pytest", "sphinx"]
+
+[tool.setuptools.packages.find]
+where = ["."]
