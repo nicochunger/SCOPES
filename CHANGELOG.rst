@@ -6,6 +6,11 @@
   of a target that is always up, but this is not a problem for the scheduler and might be confusing for the user.
 - Fixed a small bug in the import of plotly. The idea is that it is an optional dependency and should not be
   imported if not needed. It is only imported when the ``plot_interactive()`` method is called.
+- Migrated build system from ``setup.py`` to ``pyproject.toml``
+- Added example plots of a plan to the README file.
+- Removed ``Instrument`` class. The instrument is now an optional parameter of the ``Observation`` class.
+  - This is to allow the cases where a Program might use more than one instrument. And to make it more flexible.
+
 
 0.3.8 - 26.08.2024
 ------------------
