@@ -1,6 +1,6 @@
-![logo](https://raw.githubusercontent.com/nicochunger/SCOPES/main/logo.png)
-
 # SCOPES
+
+![logo](https://raw.githubusercontent.com/nicochunger/SCOPES/main/logo.png)
 
 ## **S**ystem for **C**oordinating **O**bservational **P**lanning and **E**fficient **S**cheduling
 
@@ -25,7 +25,7 @@ To install SCOPES, open your terminal and run the following command:
 
 `pip install scopes-astro`
 
-<small>(just `scopes` was unfortunately already taken in PyPI)</small>
+*(just `scopes` was unfortunately already taken in PyPI)*
 
 This command will install SCOPES along with its necessary dependencies, including `numpy`, `pandas`, `matplotlib`, `astropy`, `astroplan`, `tqdm`, `pytz`, and `timezonefinder`.
 
