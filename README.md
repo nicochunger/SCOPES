@@ -7,6 +7,7 @@
 SCOPES is a Python package designed to automate and optimize the scheduling of astronomical observations for ground-based telescopes equipped with dedicated instruments like cameras or spectrographs. It helps allocate shared telescope time among various observational programs, each with unique scientific objectives and priorities, into a single night. SCOPES ensures that the operation of the telescope is both effective and efficient by maximizing the use of available time while adhering to observational and scientific constraints.
 
 ## Features
+
 - **Multi-Program Scheduling:** SCOPES can handle scheduling for multiple observational programs, ensuring fair distribution of telescope time based on the scientific priorities of each program.
 - **Multi-Instrument Support:** SCOPES allows for scheduling across different instruments on the same telescope, accommodating complex observational setups with ease.
 - **Fairness, Sensibility, and Efficiency:** Built around a robust framework, SCOPES optimizes schedules by balancing fairness (equitable time distribution), sensibility (observing conditions and constraints), and efficiency (optimal timing for high data quality).
@@ -14,10 +15,9 @@ SCOPES is a Python package designed to automate and optimize the scheduling of a
 - **Flexible Overheads Management:** SCOPES allows users to define and customize overheads such as telescope slew time, instrument changes, and other operational constraints to better reflect the actual observing conditions of your setup.
 - **Comprehensive Visualization:** SCOPES provides detailed visualization tools to plot schedules, offering insights into altitude vs. time, polar plots of telescope movement, and azimuth plots to ensure an efficient schedule is achieved.
 
-
 ## Intended Users
-SCOPES is intended for telescope managers, administrators, and astronomers who need to optimize the use of telescope time for multiple programs. While it can be used by individual observers, the setup may be more demanding if used for only a few isolated nights.
 
+SCOPES is intended for telescope managers, administrators, and astronomers who need to optimize the use of telescope time for multiple programs. While it can be used by individual observers, the setup may be more demanding if used for only a few isolated nights.
 
 ## Installation
 
@@ -27,7 +27,7 @@ To install SCOPES, open your terminal and run the following command:
 
 <small>(just `scopes` was unfortunately already taken in PyPI)</small>
 
-This command will install SCOPES along with its necessary dependencies, including `numpy`, `pandas`, `matplotlib`, `astropy`, `astroplan`, `tqdm`, `pytz`, and `timezonefinder`. 
+This command will install SCOPES along with its necessary dependencies, including `numpy`, `pandas`, `matplotlib`, `astropy`, `astroplan`, `tqdm`, `pytz`, and `timezonefinder`.
 
 Ensure you have Python 3.8 or later installed.
 
@@ -40,6 +40,16 @@ To get started, import the package into your Python code:
 ### Examples
 
 In the `docs/example_notebooks` directory you can find a Jupyter notebook that details how to use SCOPES from a simple setup to a full night of observations: [`scopes_example.ipynb`](https://github.com/nicochunger/SCOPES/blob/main/docs/example_notebooks/scopes_example.ipynb)
+
+Here's an example of what a full night schedule created with SCOPES looks like:
+
+![Example Schedule](docs/example_notebooks/test_plan.png)
+
+This plot shows multiple programs scheduled throughout the night, with their target altitudes plotted against time. The colored regions indicate different twilight conditions.
+
+Here's an example of a polar plot showing the path the telescope takes throughout the night:
+
+<img src="docs/example_notebooks/test_plan_polar.png" alt="Polar Plot" width="50%">
 
 ## Documentation
 
