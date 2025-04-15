@@ -106,7 +106,7 @@ def test_merit_str_method(example_merit_func):
         merit_type="efficiency",
         parameters={"example_param": 0.5},
     )
-    expected_str = "Merit(Example Merit, efficiency, {'example_param': 0.5})"
+    expected_str = "Merit(Example Merit, efficiency, {'example_param': 0.5}, weight=1.0)"
     assert str(merit) == expected_str
 
 
@@ -117,5 +117,5 @@ def test_merit_repr_method(example_merit_func):
         merit_type="efficiency",
         parameters={"example_param": 0.5},
     )
-    expected_repr = "Merit(Example Merit, efficiency, {'example_param': 0.5})"
+    expected_repr = "Merit(Example Merit, efficiency, {'example_param': 0.5}, weight=1.0)"
     assert repr(merit) == expected_repr
