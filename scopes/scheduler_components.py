@@ -288,6 +288,7 @@ class Merit:
         func: Callable,
         merit_type: str,
         parameters: Dict[str, Any] = {},
+        weight: float = 1.0,
     ):
         """
         Initialize a new instance of the Merit class.
@@ -302,12 +303,15 @@ class Merit:
             The type of the merit. Can be one of "fairness", "veto", or "efficiency".
         parameters : Dict[str, Any], optional
             Custom parameters for the merit function. The keys of the dictionary must match the names of the parameters of the function. Defaults to {}.
+        weight : float, optional
+            The weight (importance) of this merit. Default is 1.0. Used as a multiplier in merit aggregation (higher weight increases importance).
         """
         self.name = name
         self.func = func  # The function that computes this merit
         self.description = self.func.__doc__
         self.merit_type = merit_type  # "veto" or "efficiency"
         self.parameters = parameters  # Custom parameters for this merit
+        self.weight = weight
 
         # Check that the merit type is valid
         if self.merit_type not in ["fairness", "veto", "efficiency"]:
@@ -364,7 +368,7 @@ class Merit:
         return self.func(observation, **all_args)
 
     def __str__(self):
-        return f"Merit({self.name}, {self.merit_type}, {self.parameters})"
+        return f"Merit({self.name}, {self.merit_type}, {self.parameters}, weight={self.weight})"
 
     def __repr__(self):
         return self.__str__()
@@ -622,6 +626,20 @@ class Observation:
                 n_grid_points=10,
             ).jd
 
+    def update_alt_airmass(self):
+        """
+        Update the altitude and airmass values throughout the observation based on the start time
+        and exposure time of the observation.
+        """
+        # Find indices
+        night_range_jd = self.night.night_time_range.value
+        start_idx = np.searchsorted(night_range_jd, self.start_time, side="left")
+        end_idx = np.searchsorted(night_range_jd, self.end_time, side="right")
+        self.obs_time_range = night_range_jd[start_idx:end_idx]
+        self.obs_altitudes = self.night_altitudes[start_idx:end_idx]
+        self.obs_azimuths = self.night_azimuths[start_idx:end_idx]
+        self.obs_airmasses = self.night_airmasses[start_idx:end_idx].value
+
     def fairness(self) -> float:
         """
         Calculate the fairness score of the target.
@@ -637,23 +655,17 @@ class Observation:
         if len(self.target.fairness_merits) == 0:
             return 1.0
         else:
+            weights = np.array([merit.weight for merit in self.target.fairness_merits])
+            if weights.sum() > 0:
+                norm_weights = weights / weights.sum()
+            else:
+                return 1.0
             return np.prod(
-                [merit.evaluate(self) for merit in self.target.fairness_merits]
+                [
+                    merit.evaluate(self) * norm_w
+                    for merit, norm_w in zip(self.target.fairness_merits, norm_weights)
+                ]
             )
-
-    def update_alt_airmass(self):
-        """
-        Update the altitude and airmass values throughout the observation based on the start time
-        and exposure time of the observation.
-        """
-        # Find indices
-        night_range_jd = self.night.night_time_range.value
-        start_idx = np.searchsorted(night_range_jd, self.start_time, side="left")
-        end_idx = np.searchsorted(night_range_jd, self.end_time, side="right")
-        self.obs_time_range = night_range_jd[start_idx:end_idx]
-        self.obs_altitudes = self.night_altitudes[start_idx:end_idx]
-        self.obs_azimuths = self.night_azimuths[start_idx:end_idx]
-        self.obs_airmasses = self.night_airmasses[start_idx:end_idx].value
 
     def feasible(self, verbose: bool = False) -> float:
         """
@@ -669,16 +681,58 @@ class Observation:
         float
             The sensibility value, which is the product of all veto merit values.
         """
+        # Check if the target has any veto merits
+        # If not, return 1.0 (indicating no vetoes)
+        if len(self.target.veto_merits) == 0:
+            return 1.0
+
         veto_merit_values = []
-        for merit in self.target.veto_merits:
+        weights = np.array([merit.weight for merit in self.target.veto_merits])
+        if weights.sum() > 0:
+            norm_weights = weights / weights.sum()
+        else:
+            raise ValueError(
+                "All veto merit weights are zero; at least one veto merit must have a nonzero weight."
+            )
+        for merit, norm_w in zip(self.target.veto_merits, norm_weights):
             value = merit.evaluate(self)
-            veto_merit_values.append(value)
+            veto_merit_values.append(value * norm_w)
             if verbose:
                 print(f"{merit.name}: {value}")
             if value == 0.0:
                 break
-        self.sensibility_value = np.prod(veto_merit_values)
-        return self.sensibility_value  # type: ignore
+
+        return np.prod(veto_merit_values)
+
+    def efficiency(self, verbose: bool = False) -> float:
+        """
+        Determines the efficiency of the target based on the efficiency merits.
+
+        Parameters
+        ----------
+        verbose : bool, optional
+            If True, prints the name and value of each efficiency merit. Defaults to False.
+
+        Returns
+        -------
+        float
+            The efficiency value, which is the product of all efficiency merit values.
+        """
+        if len(self.target.efficiency_merits) == 0:
+            return 1.0
+        efficiency_merit_values = []
+        weights = np.array([merit.weight for merit in self.target.efficiency_merits])
+        if weights.sum() > 0:
+            norm_weights = weights / weights.sum()
+        else:
+            return 1.0
+        for merit, norm_w in zip(self.target.efficiency_merits, norm_weights):
+            value = merit.evaluate(self)
+            efficiency_merit_values.append(value * norm_w)
+            if verbose:
+                print(f"{merit.name}: {value}")
+        self.efficiency_value = np.mean(efficiency_merit_values)
+        return self.efficiency_value
 
     def evaluate_score(self, verbose: bool = False) -> float:
         """
@@ -702,16 +756,11 @@ class Observation:
         # Veto merits that check for observatbility
         # This is calculated in the feasible method which is called every time the observation is
         # considered for the schedule
-        sensibility = self.sensibility_value
+        sensibility = self.feasible()
 
         # --- Efficiency ---
         # Efficiency merits that check for scientific goal
-        if len(self.target.efficiency_merits) == 0:
-            efficiency = 1.0
-        else:
-            efficiency = np.mean(
-                [merit.evaluate(self) for merit in self.target.efficiency_merits]
-            )
+        efficiency = self.efficiency()
 
         # --- Rank Score ---
         # Calculate total rank score by taking the product of fairness, sensibility and efficiency
@@ -1527,7 +1576,7 @@ class Plan:
                 color=obs.target.program.plot_color,
             )
             if i == 0:
-                # Plot a greend point at the start of the night
+                # Plot a green point at the start of the night
                 ax.plot(
                     np.radians(obs.obs_azimuths[0]),
                     obs.obs_altitudes[0],

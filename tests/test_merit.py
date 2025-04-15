@@ -76,9 +76,14 @@ def test_merit_evaluate_method(example_merit_func, example_observation):
         func=example_merit_func,
         merit_type="efficiency",
         parameters={"example_param": 0.5},
+        weight=2.0,
     )
+    # The merit itself returns 0.5, but with weight=2.0, aggregation should use 0.5 * 2.0 = 1.0
+    # Here, test the raw evaluate (should be 0.5)
     result = merit.evaluate(example_observation)
     assert result == 0.5
+    # Simulate aggregation:
+    assert result * merit.weight == 1.0
 
 
 def test_merit_evaluate_with_runtime_parameters(

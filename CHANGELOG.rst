@@ -10,6 +10,11 @@
 - Added example plots of a plan to the README file.
 - Removed ``Instrument`` class. The instrument is now an optional parameter of the ``Observation`` class.
   - This is to allow the cases where a Program might use more than one instrument. And to make it more flexible.
+- The ``plot_altaz()`` of ``Plan`` mow has a ``color_by`` parameter that allows to color the each observation by
+  the target's Program or instrument.
+- The ``Merit`` objects can now take a weighting factor. This is to allow the user to set the importance of each 
+  merit in the final score. These weights are normalized by merit type. Meaning all merits of the same type are grouped
+  and the weights are normalized to sum to 1.
 
 
 0.3.8 - 26.08.2024

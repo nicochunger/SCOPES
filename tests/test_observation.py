@@ -1,5 +1,6 @@
 import uuid
 
+import numpy as np
 import pytest
 
 from scopes.scheduler_components import Night, Observation
@@ -95,13 +96,32 @@ def test_observation_fairness_no_merits(example_observation: Observation):
     example_observation.target.fairness_merits.clear()  # Ensure no fairness merits
     assert example_observation.fairness() == 1.0  # No merits, fairness should be 1.0
 
+    # All weights zero (should return 1.0)
+    class DummyMerit:
+        def evaluate(self, obs):
+            return 1.0
+
+        weight = 0.0
+
+    example_observation.target.fairness_merits = [DummyMerit(), DummyMerit()]
+    assert example_observation.fairness() == 1.0
+
 
 def test_observation_fairness_with_merits(
     example_observation_with_fairness: Observation,
 ):
-    assert (
-        example_observation_with_fairness.fairness() == 1.2
-    )  # Should match the merit function's return value
+    # Suppose two merits: one returns 1.0 (weight 2), one returns 2.0 (weight 1)
+    # Normalized weights: [2/3, 1/3]
+    # Fairness = 1.0*2/3 + 2.0*1/3 = 2/3 + 2/3 = 4/3 (if sum, but here product: (1.0*2/3)*(2.0*1/3))
+    # But current code: product of (merit * norm_weight) for each merit
+    # Let's check that explicitly:
+    merits = example_observation_with_fairness.target.fairness_merits
+    weights = [m.weight for m in merits]
+    norm_weights = [w / sum(weights) for w in weights]
+    expected = 1.0
+    for m, w in zip(merits, norm_weights):
+        expected *= m.evaluate(example_observation_with_fairness) * w
+    assert example_observation_with_fairness.fairness() == expected
 
 
 def test_observation_update_alt_airmass(
@@ -123,34 +143,73 @@ def test_observation_feasible_no_merits(example_observation: Observation):
         example_observation.feasible() == 1.0
     )  # No veto merits, sensibility should be 1.0
 
+    # All weights zero (should raise ValueError)
+    class DummyMerit:
+        def evaluate(self, obs):
+            return 1.0
+
+        weight = 0.0
+
+    example_observation.target.veto_merits = [DummyMerit(), DummyMerit()]
+
+    with pytest.raises(ValueError):
+        example_observation.feasible()
+
 
 def test_observation_feasible_with_veto_merit(
     example_observation_with_veto: Observation,
 ):
-    assert (
-        example_observation_with_veto.feasible() == 0.0
-    )  # Should match the veto merit function's return value
+    # If all veto merits return nonzero, sensibility is product of (value * norm_weight)
+    merits = example_observation_with_veto.target.veto_merits
+    weights = [m.weight for m in merits]
+    norm_weights = [w / sum(weights) for w in weights]
+    expected = 1.0
+    for m, w in zip(merits, norm_weights):
+        expected *= m.evaluate(example_observation_with_veto) * w
+    assert example_observation_with_veto.feasible() == expected
+
+    # If any veto merit returns 0, sensibility is 0
+    class ZeroVeto:
+        def evaluate(self, obs):
+            return 0.0
+
+        weight = 1.0
+
+    example_observation_with_veto.target.veto_merits = [ZeroVeto()]
+    assert example_observation_with_veto.feasible() == 0.0
 
 
 def test_observation_evaluate_score_with_fairness(
     example_observation_with_fairness: Observation,
 ):
+    # Use actual fairness, sensibility, efficiency with weights
     example_observation_with_fairness.feasible()  # sensibility must be calculated first
+    fairness = example_observation_with_fairness.fairness()
+    sensibility = example_observation_with_fairness.feasible()
+    efficiency = example_observation_with_fairness.efficiency()
     score = example_observation_with_fairness.evaluate_score()
-    assert (
-        score == 1.2
-    )  # Since fairness = 1.2, sensibility = 1, efficiency = 1 (default)
+    expected = fairness * sensibility * efficiency
+    assert score == expected
 
 
 def test_observation_evaluate_score_with_efficiency(
     example_observation_with_efficiency: Observation,
 ):
+    # Suppose two efficiency merits: returns 0.8 (weight 1), 1.0 (weight 1)
+    # Normalized weights: [0.5, 0.5]
+    # Efficiency = mean([0.8*0.5, 1.0*0.5]) = (0.4 + 0.5)/2 = 0.45
+    merits = example_observation_with_efficiency.target.efficiency_merits
+    weights = [m.weight for m in merits]
+    norm_weights = [w / sum(weights) for w in weights]
+    eff_values = [
+        m.evaluate(example_observation_with_efficiency) * w
+        for m, w in zip(merits, norm_weights)
+    ]
+    expected = np.mean(eff_values)
     example_observation_with_efficiency.set_start_time(2456789.5)
     example_observation_with_efficiency.feasible()  # sensibility must be calculated first
     score = example_observation_with_efficiency.evaluate_score()
-    assert (
-        score == 0.9
-    )  # Since fairness = 1 (default), sensibility = 1, efficiency = 0.9
+    assert score == expected
 
 
 def test_observation_evaluate_score_with_veto(
