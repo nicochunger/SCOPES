@@ -225,15 +225,13 @@ class Program:
         ----------
         progID : str
             The program ID code.
-        time_share_allocated : float, optional
-            The time share allocated to the program as a percentage of total time.
-            Must be between 0 and 1.
         priority : int
             The priority of the program. Must be between 0 and 3, where 0 is the highest priority
             and 3 is the lowest.
+        time_share_allocated : float, optional
+            The time share allocated to the program as a percentage of total time. Must be between 0 and 1. Defaults to 0.0.
         plot_color : str, optional
-            The color to use when plotting an observation of this program. Must be a valid hex code.
-            By default the colors will be chosen from a default palette.
+            The color to use when plotting an observation of this program. Must be a valid hex code (e.g., '#FF0000'). By default, the colors will be chosen from a default palette. Defaults to None.
         """
         if not isinstance(progID, str):
             raise TypeError("progID must be a string")
@@ -261,7 +259,7 @@ class Program:
         Parameters
         ----------
         current_time_usage : float
-            The current time share used by the program in percent of the total
+            The current time share used by the program as a fraction (0 to 1) of the total.
         """
         # Value check
         if not (0 <= current_time_usage <= 1):
@@ -303,8 +301,7 @@ class Merit:
         merit_type : {"fairness", "veto", "efficiency"}
             The type of the merit. Can be one of "fairness", "veto", or "efficiency".
         parameters : Dict[str, Any], optional
-            Custom parameters for the merit function. Defaults to {}. The keys of the dictionary
-            must match the names of the parameters of the function.
+            Custom parameters for the merit function. The keys of the dictionary must match the names of the parameters of the function. Defaults to {}.
         """
         self.name = name
         self.func = func  # The function that computes this merit
@@ -389,13 +386,12 @@ class Target:
         ----------
         name : str
             The name of the target.
-        prog : Program
+        program : Program
             The Program object that the target belongs to.
         coords : SkyCoord
             The coordinates of the target.
-        priority : int
-            The priority of the target. Must be between 0 and 3, where 0 is the highest priority
-            and 3 is the lowest.
+        priority : int, optional
+            The priority of the target. Must be between 0 and 3, where 0 is the highest priority and 3 is the lowest. Defaults to None.
         comment : str, optional
             A comment about the target directed to the observer. Defaults to an empty string.
         """
@@ -672,7 +668,7 @@ class Observation:
         Parameters
         ----------
         verbose : bool, optional
-            If True, prints the name and value of each veto merit. Defaults to False
+            If True, prints the name and value of each veto merit. Defaults to False.
 
         Returns
         -------
@@ -697,7 +693,7 @@ class Observation:
         Parameters
         ----------
         verbose : bool, optional
-            If True, print the fairness, sensibility, efficiency, and rank score.
+            If True, print the fairness, sensibility, efficiency, and rank score. Defaults to False.
 
         Returns
         -------
@@ -743,7 +739,7 @@ class Observation:
         Parameters
         ----------
         start_time : float
-            The new start time to set for the observation
+            The new start time to set for the observation.
         """
         self.set_start_time(start_time)
         self.update_alt_airmass()
@@ -799,7 +795,7 @@ class Overheads:
         slew_rate_alt : float
             The altitude slew rate in degrees per second.
         cable_wrap_angle : float, optional
-            The azimuth angle where the cable wrap limit is at, in degrees. Default is None.
+            The azimuth angle where the cable wrap limit is at, in degrees. Defaults to None.
         """
         # Validate that slew rates are positive
         if slew_rate_az <= 0 or slew_rate_alt <= 0:
@@ -826,8 +822,7 @@ class Overheads:
         Returns
         -------
         bool
-            True if the function has exactly two parameters named 'observation1' and 'observation2',
-            False otherwise.
+            True if the function has exactly two parameters named 'observation1' and 'observation2', False otherwise.
         """
         params = inspect.signature(func).parameters
         param_names = list(params.keys())
@@ -886,6 +881,8 @@ class Overheads:
         ----------
         overhead_func : Callable
             The overhead function to be added.
+        can_overlap_with_slew : bool, optional
+            Whether this overhead can overlap with the slew time. Defaults to False.
         """
         # Check that the given object is a function
         if not inspect.isfunction(overhead_func):
@@ -954,6 +951,11 @@ class Overheads:
             The first observation.
         observation2 : Observation
             The second observation.
+
+        Returns
+        -------
+        float
+            The total overhead time (in days) between the two observations.
         """
         # Calculate slew time based on RA and DEC differences and slew rates
         slew_time = self.calculate_slew_time(observation1, observation2)
@@ -998,6 +1000,11 @@ class Plan:
         ----------
         observation : Observation
             The Observation object to be added to the plan.
+
+        Returns
+        -------
+        Plan
+            Returns self, to allow method chaining.
         """
         self.observations.append(observation)
         return self
@@ -1005,6 +1012,8 @@ class Plan:
     def calculate_overhead(self):
         """
         Calculates the overheads for the entire plan, as well as the total observation time.
+
+        This method sets the attributes: observation_time, overhead_time, unused_time, overhead_ratio, and observation_ratio.
         """
         # Calculate the overheads for the plan
         # Go through all observation and count the time between the end of one observation and the
@@ -1055,9 +1064,9 @@ class Plan:
         Parameters
         ----------
         w_score : float, optional
-            The weight of the score in the evaluation. Defaults to 0.4.
+            The weight of the score in the evaluation. Defaults to 0.2.
         w_overhead : float, optional
-            The weight of the overhead in the evaluation. Defaults to 0.6.
+            The weight of the overhead in the evaluation. Defaults to 0.8.
 
         Returns
         -------
