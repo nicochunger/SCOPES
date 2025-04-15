@@ -6,36 +6,62 @@ from scopes.scheduler_components import Night, Observation
 
 
 def test_observation_initialization(example_target):
-    observation = Observation(target=example_target, duration=3600)
-    assert observation.target == example_target
-    assert observation.duration == 3600 / 86400  # exposure time in days
-    assert observation.tel_alt_lower_lim == 10.0
-    assert observation.tel_alt_upper_lim == 90.0
-    assert observation.score == 0.0
-    assert isinstance(observation.unique_id, uuid.UUID)
+    # Test with default instrument (None)
+    observation_default = Observation(target=example_target, duration=3600)
+    assert observation_default.target == example_target
+    assert observation_default.duration == 3600 / 86400  # exposure time in days
+    assert observation_default.instrument is None  # Check default instrument
+    assert observation_default.tel_alt_lower_lim == 10.0
+    assert observation_default.tel_alt_upper_lim == 90.0
+    assert observation_default.score == 0.0
+    assert isinstance(observation_default.unique_id, uuid.UUID)
+
+    # Test with specified instrument
+    instrument_name = "TestSpec"
+    observation_instrument = Observation(
+        target=example_target, duration=3600, instrument=instrument_name
+    )
+    assert (
+        observation_instrument.instrument == instrument_name
+    )  # Check specified instrument
 
 
 def test_observation_invalid_target_type():
     with pytest.raises(TypeError):
-        Observation(target="InvalidTarget", duration=3600)
+        Observation(
+            target="InvalidTarget", duration=3600, instrument="TestSpec"
+        )  # Added instrument
 
 
 def test_observation_invalid_duration_value(example_target):
     with pytest.raises(ValueError):
-        Observation(target=example_target, duration=0)  # duration must be > 0
+        Observation(
+            target=example_target, duration=0, instrument="TestSpec"
+        )  # Added instrument
+
+
+def test_observation_invalid_instrument_type(example_target):
+    with pytest.raises(TypeError):
+        Observation(
+            target=example_target, duration=3600, instrument=123
+        )  # Invalid instrument type
 
 
 def test_observation_warning_for_short_duration(example_target):
     with pytest.warns(UserWarning):
         Observation(
-            target=example_target, duration=0.5
+            target=example_target,
+            duration=0.5,
+            instrument="TestSpec",  # Added instrument
         )  # Warning for exposure time < 1 second
 
 
 def test_observation_warning_for_long_duration(example_target):
     with pytest.warns(UserWarning):
         Observation(
-            target=example_target, duration=32401
+            target=example_target,
+            duration=32401,
+            instrument="TestSpec",  # Added instrument
         )  # Warning for exposure time > 9 hours
 
 
@@ -150,8 +176,11 @@ def test_observation_update_start_and_score(
 
 def test_observation_str_method(example_observation: Observation):
     example_observation.set_start_time(2456789.5)
+    # Fixture provides 'Example Spectrograph' as instrument
+    instrument_str = f"            Instrument: {example_observation.instrument},\n"
     expected_str = (
         f"Observation(Target: {example_observation.target.name},\n"
+        f"{instrument_str}"  # Added instrument string
         f"            Start time: {example_observation.start_time},\n"
         f"            Exposure time: {example_observation.duration},\n"
         f"            Score: {example_observation.score})"
@@ -161,8 +190,11 @@ def test_observation_str_method(example_observation: Observation):
 
 def test_observation_repr_method(example_observation: Observation):
     example_observation.set_start_time(2456789.5)
+    # Fixture provides 'Example Spectrograph' as instrument
+    instrument_str = f"            Instrument: {example_observation.instrument},\n"
     expected_repr = (
         f"Observation(Target: {example_observation.target.name},\n"
+        f"{instrument_str}"  # Added instrument string
         f"            Start time: {example_observation.start_time},\n"
         f"            Exposure time: {example_observation.duration},\n"
         f"            Score: {example_observation.score})"
@@ -171,10 +203,19 @@ def test_observation_repr_method(example_observation: Observation):
 
 
 def test_observation_equality(example_target):
-    observation1 = Observation(target=example_target, duration=3600)
-    observation2 = Observation(target=example_target, duration=3600)
+    observation1 = Observation(
+        target=example_target, duration=3600, instrument="Spec1"
+    )  # Added instrument
+    observation2 = Observation(
+        target=example_target, duration=3600, instrument="Spec1"
+    )  # Added instrument
+    observation3 = Observation(
+        target=example_target, duration=3600, instrument="Spec2"
+    )  # Different instrument
     assert observation1 != observation2  # Different unique IDs, should not be equal
     assert observation1 == observation1  # Same object, should be equal
+    # Equality is based on unique_id, not instrument name
+    assert observation1 != observation3
 
 
 def test_observation_equality_different_type(example_observation):

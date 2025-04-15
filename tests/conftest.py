@@ -6,7 +6,6 @@ from astropy.coordinates import Angle, SkyCoord
 
 from scopes.merits import airmass
 from scopes.scheduler_components import (
-    Instrument,
     Merit,
     Night,
     Observation,
@@ -32,19 +31,9 @@ def example_night(example_observer):
 
 
 @pytest.fixture
-def example_instrument():
-    return Instrument(
-        name="Example Spectrograph",
-        instrument_type="Spectrograph",
-        plot_color="#FF5733",
-    )
-
-
-@pytest.fixture
-def example_program(example_instrument):
+def example_program():
     return Program(
         progID="Prog123",
-        instrument=example_instrument,
         priority=1,
         time_share_allocated=0.3,
     )
@@ -127,31 +116,43 @@ def example_veto_merit():
 @pytest.fixture
 def example_observation(example_target, example_merit, example_night):
     example_target.add_merit(merit=example_merit)
-    obs = Observation(target=example_target, duration=600.0)
+    obs = Observation(
+        target=example_target, duration=600.0, instrument="Example Spectrograph"
+    )
     obs.set_night(example_night)
     return obs
 
 
 @pytest.fixture
-def example_observation_with_fairness(example_target, example_fairness_merit):
+def example_observation_with_fairness(
+    example_target, example_fairness_merit, example_night
+):
     example_target.add_merit(merit=example_fairness_merit)
-    obs = Observation(target=example_target, duration=600.0)
+    obs = Observation(
+        target=example_target, duration=600.0, instrument="Example Spectrograph"
+    )
     obs.set_night(example_night)
     return obs
 
 
 @pytest.fixture
-def example_observation_with_efficiency(example_target, example_efficiency_merit):
+def example_observation_with_efficiency(
+    example_target, example_efficiency_merit, example_night
+):
     example_target.add_merit(merit=example_efficiency_merit)
-    obs = Observation(target=example_target, duration=600.0)
+    obs = Observation(
+        target=example_target, duration=600.0, instrument="Example Spectrograph"
+    )
     obs.set_night(example_night)
     return obs
 
 
 @pytest.fixture
-def example_observation_with_veto(example_target, example_veto_merit):
+def example_observation_with_veto(example_target, example_veto_merit, example_night):
     example_target.add_merit(merit=example_veto_merit)
-    obs = Observation(target=example_target, duration=600.0)
+    obs = Observation(
+        target=example_target, duration=600.0, instrument="Example Spectrograph"
+    )
     obs.set_night(example_night)
     return obs
 
@@ -174,7 +175,9 @@ def example_full_observation2(
         name="Target002", program=example_program, coords=new_coords, priority=1
     )
     new_target.add_merit(merit=example_merit)
-    example_observation2 = Observation(target=new_target, duration=600.0)
+    example_observation2 = Observation(
+        target=new_target, duration=600.0, instrument="Another Instrument"
+    )
     example_observation2.set_night(example_night)
     example_observation2.set_start_time(2460524.7)
     example_observation2.skypath()
@@ -191,7 +194,9 @@ def example_full_observation3(
         name="Target003", program=example_program, coords=new_coords, priority=1
     )
     new_target.add_merit(merit=example_merit)
-    example_observation3 = Observation(target=new_target, duration=600.0)
+    example_observation3 = Observation(
+        target=new_target, duration=600.0, instrument="Example Spectrograph"
+    )
     example_observation3.set_night(example_night)
     example_observation3.set_start_time(2460524.7)
     example_observation3.skypath()
