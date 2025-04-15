@@ -526,6 +526,7 @@ class Observation:
         self.score: float = 0.0  # Initialize score to zero
         self.veto_merits: List[float] = []  # List to store veto merits
         self.unique_id = uuid.uuid4()  # Unique ID for the observation instance
+        self.start_time: float = None  # Start time of the observation in JD
 
     def set_night(self, night: Night):
         """
@@ -550,13 +551,6 @@ class Observation:
         # Check night has been assigned
         if not hasattr(self, "night"):
             raise AttributeError("Night must be assigned to the observation first")
-        # Check if the start time is within the night time range
-        # if not (
-        #     self.night.night_time_range[0].jd
-        #     <= start_time
-        #     <= self.night.night_time_range[-1].jd
-        # ):
-        #     raise ValueError("Start time must be within the night time range")
 
         self.start_time = start_time
         self.end_time = self.start_time + self.duration
@@ -747,14 +741,11 @@ class Observation:
         self.evaluate_score()
 
     def __str__(self):
-        instrument_str = (
-            f"            Instrument: {self.instrument},\n" if self.instrument else ""
-        )
         lines = [
-            f"Observation(Target: {self.target.name},",
-            instrument_str,
-            f"            Start time: {self.start_time},",
-            f"            Exposure time: {self.duration},",
+            f"Observation(Target: {self.target.name},\n",
+            f"            Instrument: {self.instrument},\n",
+            f"            Start time: {self.start_time},\n",
+            f"            Exposure time: {self.duration},\n",
             f"            Score: {self.score})",
         ]
 
