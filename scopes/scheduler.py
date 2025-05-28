@@ -6,6 +6,7 @@ from typing import Any, List, Tuple, Union
 import numpy as np
 from tqdm.auto import tqdm
 
+from . import logger
 from .merits import airmass_efficiency, end_time
 from .scheduler_components import Merit, Night, Observation, Overheads, Plan
 
@@ -46,7 +47,7 @@ class Scheduler:
             The end time of the plan in Julian Date. If None, it is set to the end of the
             observable night (as defined in the night object).
         """
-        print("Preparing observations for scheduling...")
+        logger.info("Preparing observations for scheduling...")
         # Set plan_start_time to the start of the observable night if it's None, otherwise use the given value
         self.plan_start_time = (
             night.obs_within_limits[0] if plan_start_time is None else plan_start_time
@@ -508,13 +509,13 @@ class Scheduler:
 
         if verbose:
             if metric == "overheads":
-                print(f"Initial plan overhead time: {plan.overhead_time}")
+                logger.debug(f"Initial plan overhead time: {plan.overhead_time}")
             elif metric == "score":
                 # Save initial scores and airmasses because of the change of merits
                 intial_score = best_plan.score
                 intial_avg_amass = best_plan.avg_airmass
-                print(f"Initial plan score: {intial_score:.4f}")
-                print(f"Initial avg airmass: {intial_avg_amass:.4f}")
+                logger.debug(f"Initial plan score: {intial_score:.4f}")
+                logger.debug(f"Initial avg airmass: {intial_avg_amass:.4f}")
 
         improved = True
         iteration_count = 0
@@ -572,31 +573,31 @@ class Scheduler:
             if verbose:
                 if metric == "overheads":
                     delta_t = current_plan.overhead_time - best_plan.overhead_time
-                    print(f"\n----- Iteration {iteration_count} -----")
-                    print(f"Overhead time: {best_plan.overhead_time}")
-                    print(f"Time saved with {move_count} changes: {delta_t}\n")
+                    logger.debug(f"\n----- Iteration {iteration_count} -----")
+                    logger.debug(f"Overhead time: {best_plan.overhead_time}")
+                    logger.debug(f"Time saved with {move_count} changes: {delta_t}\n")
                 elif metric == "score":
                     delta_score = current_plan.score - best_plan.score
-                    print(f"\n----- Iteration {iteration_count} -----")
-                    print(f"Score: {best_plan.score:.4f}")
-                    print(
+                    logger.debug(f"\n----- Iteration {iteration_count} -----")
+                    logger.debug(f"Score: {best_plan.score:.4f}")
+                    logger.debug(
                         f"Score improvement with {move_count} changes: {delta_score:.4f}\n"
                     )
 
         if verbose:
-            print("Optimization finished.")
+            logger.debug("Optimization finished.")
             if metric == "overheads":
-                print(f"Optimized plan overhead time: {best_plan.overhead_time}")
-                print(
-                    "Total time saved: ", plan.overhead_time - best_plan.overhead_time
+                logger.debug(f"Optimized plan overhead time: {best_plan.overhead_time}")
+                logger.debug(
+                    "Total time saved: %s", plan.overhead_time - best_plan.overhead_time
                 )
             elif metric == "score":
                 score_delta = intial_score - best_plan.score
                 avg_amass_delta = intial_avg_amass - best_plan.avg_airmass
-                print(
+                logger.debug(
                     f"Optimized plan score: {best_plan.score:.4f} ({score_delta:+.4f})"
                 )
-                print(
+                logger.debug(
                     f"Optimized plan avg airmass: {best_plan.avg_airmass:.4f} ({avg_amass_delta:+.4f})"
                 )
 
@@ -718,7 +719,7 @@ class generateQ(Scheduler):
         Plan
             The final plan
         """
-        print("Creating the Plan...")
+        logger.info("Creating the Plan...")
         # Check max_plan_length
         max_plan_length = self._check_max_plan_length(max_plan_length)
 
@@ -787,11 +788,12 @@ class generateQ(Scheduler):
                 self.update_start_from_prev(remaining_obs, final_plan.observations[-1])
 
         # Perform a final score optimization
+        logger.info("Performing final optimization...")
         final_plan = self.lsh_optimization(final_plan, method="move", metric="score")
 
         # Evaluate the final plan
         final_plan.evaluate_plan()
-        print("Done!")
+        logger.info("Done!")
 
         return final_plan
 
@@ -1002,19 +1004,3 @@ class BeamSearchPlanner(Scheduler):
                 PQ_next = PriorityQueue()
 
         return best_plan
-
-
-# Genetic algorithm scheduler
-# class GeneticAlgorithm:
-#     def __init__(self) -> None:
-#         self.total_counter: int = 0
-
-#     def nsga2(
-#         self,
-#         available_observations: List[Observation],
-#         max_plan_length: int,
-#         population_size: int,
-#         generations: int,
-#     ):
-#         """Non-dominated Sorting Genetic Algorithm II (NSGA-II) implementation"""
-#         return None

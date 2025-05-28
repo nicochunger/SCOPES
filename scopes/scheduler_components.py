@@ -19,6 +19,8 @@ from astropy.coordinates import SkyCoord
 from astropy.time import Time, TimeDelta
 from timezonefinder import TimezoneFinder
 
+from . import logger
+
 # Ignore astroplan's TargetAlwaysUpWarning
 # This warning is raised when the target is always up during the night, which is not relevant for scheduling
 warnings.filterwarnings(
@@ -667,14 +669,9 @@ class Observation:
                 ]
             )
 
-    def feasible(self, verbose: bool = False) -> float:
+    def feasible(self) -> float:
         """
         Determines the feasibility of the target based on the veto merits.
-
-        Parameters
-        ----------
-        verbose : bool, optional
-            If True, prints the name and value of each veto merit. Defaults to False.
 
         Returns
         -------
@@ -697,21 +694,15 @@ class Observation:
         for merit, norm_w in zip(self.target.veto_merits, norm_weights):
             value = merit.evaluate(self)
             veto_merit_values.append(value * norm_w)
-            if verbose:
-                print(f"{merit.name}: {value}")
+            logger.debug(f"{merit.name}: {value}")
             if value == 0.0:
                 break
 
         return np.prod(veto_merit_values)
 
-    def efficiency(self, verbose: bool = False) -> float:
+    def efficiency(self) -> float:
         """
         Determines the efficiency of the target based on the efficiency merits.
-
-        Parameters
-        ----------
-        verbose : bool, optional
-            If True, prints the name and value of each efficiency merit. Defaults to False.
 
         Returns
         -------
@@ -729,19 +720,13 @@ class Observation:
         for merit, norm_w in zip(self.target.efficiency_merits, norm_weights):
             value = merit.evaluate(self)
             efficiency_merit_values.append(value * norm_w)
-            if verbose:
-                print(f"{merit.name}: {value}")
+            logger.debug(f"{merit.name}: {value}")
         self.efficiency_value = np.mean(efficiency_merit_values)
         return self.efficiency_value
 
-    def evaluate_score(self, verbose: bool = False) -> float:
+    def evaluate_score(self) -> float:
         """
         Evaluates the score of the observation based on fairness, sensibility, and efficiency.
-
-        Parameters
-        ----------
-        verbose : bool, optional
-            If True, print the fairness, sensibility, efficiency, and rank score. Defaults to False.
 
         Returns
         -------
@@ -749,29 +734,21 @@ class Observation:
             The score of the observation.
         """
         # --- Fairness ---
-        # Balances time allocation and priority
         fairness = self.fairness()
 
         # --- Sensibility ---
-        # Veto merits that check for observatbility
-        # This is calculated in the feasible method which is called every time the observation is
-        # considered for the schedule
         sensibility = self.feasible()
 
         # --- Efficiency ---
-        # Efficiency merits that check for scientific goal
         efficiency = self.efficiency()
 
         # --- Rank Score ---
-        # Calculate total rank score by taking the product of fairness, sensibility and efficiency
         self.score = np.prod([fairness, sensibility, efficiency])  # type: ignore
 
-        # Print results if verbose
-        if verbose:
-            print(f"Fairness: {fairness}")
-            print(f"Sensibility: {sensibility}")
-            print(f"Efficiency: {efficiency}")
-            print(f"Rank score: {self.score}")
+        logger.debug(f"Fairness: {fairness}")
+        logger.debug(f"Sensibility: {sensibility}")
+        logger.debug(f"Efficiency: {efficiency}")
+        logger.debug(f"Rank score: {self.score}")
 
         return self.score
 
@@ -1377,8 +1354,8 @@ class Plan:
             The path to the file where the plot will be saved. Defaults to None.
         """
         # Import Plotly here to avoid unnecessary dependencies
-        from plotly.subplots import make_subplots
         import plotly.graph_objs as go
+        from plotly.subplots import make_subplots
 
         first_obs = self.observations[0]
 

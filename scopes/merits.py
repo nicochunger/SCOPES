@@ -4,6 +4,8 @@ import warnings
 
 import numpy as np
 
+from . import logger
+
 # from astropy.time import Time
 from .scheduler_components import Observation
 
@@ -285,7 +287,7 @@ def start_time(observation: Observation, time: float) -> float:
     return float(observation.start_time >= time)
 
 
-def culmination(observation: Observation, verbose: bool = False) -> float:
+def culmination(observation: Observation) -> float:
     """
     Culmination constraint merit function.
     This merit calculates the current height of the target and the proportion to the maximum height
@@ -297,15 +299,14 @@ def culmination(observation: Observation, verbose: bool = False) -> float:
     altitude_prop = (current_altitude - observation.min_altitude) / (
         observation.max_altitude - observation.min_altitude
     )
-    if verbose:
-        print(f"Current altitude: {current_altitude}")
-        print(f"Max altitude: {observation.max_altitude}")
-        print(f"Min altitude: {observation.min_altitude}")
-        print(f"Altitude proportion: {altitude_prop}")
+    logger.debug(f"Current altitude: {current_altitude}")
+    logger.debug(f"Max altitude: {observation.max_altitude}")
+    logger.debug(f"Min altitude: {observation.min_altitude}")
+    logger.debug(f"Altitude proportion: {altitude_prop}")
     return altitude_prop
 
 
-def culmination_efficiency(observation: Observation, verbose: bool = False) -> float:
+def culmination_efficiency(observation: Observation) -> float:
     """
     This merit is designed to make the scheduling of astronomical observations more efficient by
     expanding the selection of observable stars beyond those reaching their culmination (highest
@@ -334,8 +335,6 @@ def culmination_efficiency(observation: Observation, verbose: bool = False) -> f
     ----------
     observation : Observation
         The Observation object to be used
-    verbose : bool, optional
-        If True, print the calculated merit. Defaults to False.
     """
     n = observation.night  # Simplify the notation for shorter and cleaner code
     # Check if the culmination window is within the night time limits
@@ -359,10 +358,9 @@ def culmination_efficiency(observation: Observation, verbose: bool = False) -> f
     # Calculate the merit of the target at the mapping time
     merit = gaussian((peak_merit_time - observation.start_time), 4 / 24)
 
-    if verbose:
-        print(f"{time_prop = }")
-        print(f"{peak_merit_time = }")
-        print(f"{merit = }")
+    logger.debug(f"time_prop = {time_prop}")
+    logger.debug(f"peak_merit_time = {peak_merit_time}")
+    logger.debug(f"merit = {merit}")
 
     return merit
 
@@ -489,7 +487,6 @@ def time_critical(
     start_time: float,
     start_time_tolerance: float,
     steepness: float = 0.0014,  # in days, which is ~2 minutes
-    verbose: bool = False,
 ) -> float:
     """
     Calculate the time criticality merit of an observation. It uses a double hyperbolic tangent
@@ -513,19 +510,11 @@ def time_critical(
     steepness : float, optional
         The steepness of the hyperbolic tangent function. A measure of how much time it takes the
         function to go from 0 to the max value in days. Defaults to 0.0014 days, which is ~2 minutes.
-    verbose : bool, optional
-        If True, print the calculated merit. Defaults to False.
-
-    Returns
-    -------
-    float: The time criticality merit of the observation.
     """
     arg1 = (observation.start_time - (start_time - start_time_tolerance)) / steepness
     arg2 = ((start_time + start_time_tolerance) - observation.start_time) / steepness
     merit = np.tanh(arg1) + np.tanh(arg2)
-
-    if verbose:
-        print(f"time_critical {merit = }")
+    logger.debug(f"time_critical merit = {merit}")
     return merit
 
 
