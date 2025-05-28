@@ -1,4 +1,4 @@
-0.4.0 - TBD
+0.4.0 - 28.05.2025
 -----------
 
 - Changed ``exposure_time`` parameter to ``duration`` to be more agnostic to the type of observation.
