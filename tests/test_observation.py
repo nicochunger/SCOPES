@@ -173,6 +173,8 @@ def test_observation_feasible_with_veto_merit(
         def evaluate(self, obs):
             return 0.0
 
+        name = "ZeroVeto"
+        veto_type = "example_veto"
         weight = 1.0
 
     example_observation_with_veto.target.veto_merits = [ZeroVeto()]
