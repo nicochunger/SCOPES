@@ -15,6 +15,7 @@
 - The ``Merit`` objects can now take a weighting factor. This is to allow the user to set the importance of each 
   merit in the final score. These weights are normalized by merit type. Meaning all merits of the same type are grouped
   and the weights are normalized to sum to 1.
+- Information is now shown with proper logging instead of print statements.
 
 
 0.3.8 - 26.08.2024
