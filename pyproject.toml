@@ -9,7 +9,7 @@ description = "System for Coordinating Observational Planning and Efficient Sche
 readme = "README.md"
 requires-python = ">=3.8"
 license = "GPL-3.0-only"
-authors = [{ name = "Nicolas Unger", email = "nicolas.unger@unige.ch" }]
+authors = [{ name = "Nicolas Unger", email = "nicounger@proton.me" }]
 keywords = ["astronomy", "scheduling", "observation", "planning"]
 classifiers = [
   "Development Status :: 4 - Beta",
